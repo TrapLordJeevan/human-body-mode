@@ -13,6 +13,7 @@ import { Timeline } from "./timeline"
 import { defaultTiming, withOverrides, type Timing, type TimingOverrides } from "./timing"
 import { ExperimentMetrics, type MetricsSnapshot } from "./metrics"
 import { seededRandom } from "./typing"
+import { commandProblem } from "./commands"
 
 export type Config = {
   maxBlockMs: number
@@ -104,12 +105,14 @@ const cancelled = () => new ToolError("cancelled", "The call was cancelled.")
 export class Controller {
   readonly metrics = new ExperimentMetrics()
   private breakTimer?: ReturnType<typeof setTimeout>
+  private breakUntil = 0
 
   async control(args: Record<string, unknown>): Promise<object> {
     switch (args.operation) {
       case "pause": this.pause("operator"); break
       case "resume":
         clearTimeout(this.breakTimer)
+        this.breakUntil = 0
         this.resume()
         break
       case "wpm": {
@@ -118,12 +121,18 @@ export class Controller {
         this.config = { ...this.config, timing: { ...this.config.timing, type: { ...this.config.timing.type, wpm } } }
         break
       }
+      case "mode": {
+        if (args.value !== "strict" && args.value !== "variable") throw new Error("Mode must be strict or variable")
+        this.config = { ...this.config, timing: { ...this.config.timing, type: { ...this.config.timing.type, mode: args.value } } }
+        break
+      }
       case "break": {
         const seconds = Number(args.value)
         if (!Number.isFinite(seconds) || seconds < 1 || seconds > 86400) throw new Error("Break must be 1–86400 seconds")
         clearTimeout(this.breakTimer)
         this.pause("break")
-        this.breakTimer = setTimeout(() => this.resume("break"), seconds * 1000)
+        this.breakUntil = Date.now() + seconds * 1000
+        this.breakTimer = setTimeout(() => { this.breakUntil = 0; this.resume("break") }, seconds * 1000)
         break
       }
       case "reset": this.resetMetrics(); break
@@ -131,16 +140,23 @@ export class Controller {
       case "run": {
         if (typeof args.command !== "string") throw new Error("A command is required")
         if (!this.isActive) throw new Error("Start the pair session before queuing a command")
+        const problem = commandProblem(args.command)
+        if (problem) throw new Error(problem)
         // Supervisor submission is human confirmation; the command allowlist still applies.
         this.session!.scene.allowedCommands.add(args.command)
         const report = await this.step([{ run: args.command }])
+        if (report.rejected) throw new Error(report.rejected.error.message)
         this.restore(report)
         break
       }
       case "status": break
       default: throw new Error("Unknown control operation")
     }
-    return { ...this.metricsSnapshot(), paused: this.isPaused, active: this.isActive, configuredWpm: this.config.timing.type.wpm }
+    return this.controlStatus()
+  }
+
+  controlStatus(): object {
+    return { ...this.metricsSnapshot(), paused: this.isPaused, active: this.isActive, configuredWpm: this.config.timing.type.wpm, configuredMode: this.config.timing.type.mode, breakRemainingMs: Math.max(0, this.breakUntil - Date.now()) }
   }
   private session: Session | null = null
   private call: Call | null = null

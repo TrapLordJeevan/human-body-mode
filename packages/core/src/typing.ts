@@ -16,7 +16,8 @@ function isIndent(ch: string | undefined): boolean {
 /**
  * Splits text into chunks: one per character, except that a newline and the indentation after
  * it are inserted together, as an editor's auto-indent would. Indentation at the very start is
- * inserted at once too, if `atLineStart`. Every delay is multiplied by `scale`.
+ * grouped at the start too, if `atLineStart`. Strict mode charges every indent character.
+ * Every delay is multiplied by `scale`.
  *
  * The rhythm: quick within words, a small pause as each word starts, and longer ones after
  * punctuation, opening brackets, and newlines.
@@ -33,6 +34,8 @@ export function planTyping(
   let pause = 0
   let previous: string | undefined
   let i = 0
+  let burstRemaining = 0
+  let burstFactor = 1
 
   const takeIndent = (): string => {
     let indent = ""
@@ -43,7 +46,7 @@ export function planTyping(
   if (atLineStart) {
     const indent = takeIndent()
     if (indent) {
-      chunks.push({ text: indent, delay: 0 })
+      chunks.push({ text: indent, delay: cadence.mode === "strict" ? indent.length * 12_000 / cadence.wpm * scale : 0 })
       previous = " "
     }
   }
@@ -51,11 +54,15 @@ export function planTyping(
   while (i < chars.length) {
     const ch = chars[i++]!
     const wordStart = previous !== undefined && !WORD.test(previous) && WORD.test(ch)
+    if (cadence.mode === "variable" && (cadence.burstJitter ?? 0) > 0 && burstRemaining-- <= 0) {
+      burstRemaining = 3 + Math.floor(random() * 10)
+      burstFactor = 1 + (random() * 2 - 1) * cadence.burstJitter!
+    }
     const baseMs = 12_000 / cadence.wpm
     const delay =
       cadence.mode === "strict"
         ? baseMs
-        : baseMs * (1 + (random() * 2 - 1) * cadence.jitter) + (wordStart ? cadence.wordStartMs : 0) + pause
+        : baseMs * burstFactor * (1 + (random() * 2 - 1) * cadence.jitter) + (wordStart ? cadence.wordStartMs : 0) + pause
     if (ch === "\n") {
       const indent = takeIndent()
       chunks.push({ text: ch + indent, delay: (cadence.mode === "strict" ? baseMs * (1 + indent.length) : delay) * scale })
@@ -63,7 +70,7 @@ export function planTyping(
       previous = indent ? " " : "\n"
     } else {
       chunks.push({ text: ch, delay: delay * scale })
-      pause = PUNCTUATION.has(ch) ? cadence.punctuationMs : OPEN_BRACKETS.has(ch) ? cadence.openBracketMs : 0
+      pause = PUNCTUATION.has(ch) ? cadence.punctuationMs : OPEN_BRACKETS.has(ch) ? cadence.openBracketMs : /[.!?]/.test(ch) && /\s/.test(chars[i] ?? "") ? (cadence.sentenceMs ?? 0) : 0
       previous = ch
     }
   }
@@ -73,6 +80,7 @@ export function planTyping(
     const target = (Array.from(text).length * 12_000 * scale) / cadence.wpm
     const actual = chunks.reduce((sum, chunk) => sum + chunk.delay, 0)
     if (actual > 0) for (const chunk of chunks) chunk.delay *= target / actual
+    else chunks[0]!.delay = target
   }
   return chunks
 }

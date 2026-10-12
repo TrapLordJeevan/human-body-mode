@@ -19,6 +19,10 @@ export type Cadence = {
   openBracketMs: number
   /** Extra, after a newline: the next line is being thought of. */
   newlineMs: number
+  /** Correlated speed variation across small groups of characters. */
+  burstJitter?: number
+  /** Pause after sentence punctuation; normalized into the configured average. */
+  sentenceMs?: number
 }
 
 export type Reading = { msPerWord: number; minMs: number; maxMs: number }
@@ -56,6 +60,8 @@ export const defaultTiming: Timing = {
     punctuationMs: 70,
     openBracketMs: 30,
     newlineMs: 100,
+    burstJitter: 0.25,
+    sentenceMs: 300,
   },
   fastFactor: 1,
   reading: { msPerWord: 270, minMs: 1500, maxMs: 9000 },

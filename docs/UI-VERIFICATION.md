@@ -1,5 +1,13 @@
 # Live UI verification — 2026-10-12
 
+## Dashboard update — extension 0.1.1
+
+Installed the packaged 0.1.1 VSIX in a dedicated local code-server 4.109.5 profile/extensions directory with a disposable Java fixture copy. The keyboard activity-bar icon and status-bar shortcut both open the actual webview. Browser automation clicked the real controls; no HTML recreation or Claude/Codex model was involved. [Actual dashboard screenshot](DASHBOARD.png).
+
+Verified WPM 45 and strict/variable selection reach the controller, Pause changes the live state, a ten-second break shows a countdown and returns to unpaused, Start/Reset and Stop change the clock, Export creates JSON/CSV, and command submission without a session displays an error. A pending unapplied WPM 47 edit survived polling, focus changes and an external WPM update. No claim is made that this implements a rolling instantaneous-WPM meter: effective WPM is cumulative.
+
+Zero-token real MCP/editor smoke typed and saved 46 characters: strict elapsed 11.488s / physical 10.283s; variable elapsed 10.840s / physical 10.244s, both including navigation overhead. The real-time strict 300-character test passed at 60.13s. Automated checks: 160 unit/integration/adversarial tests, six native offline Claude Mod tests, typecheck, filesystem sandbox and packaging. Dripwriter-like bursts/sentence pauses are independently authored, not copied from its noncommercial-licensed source; no artificial mistakes are inserted. Desktop WSL/Remote–SSH and a full real-Claude coding task remain unverified.
+
 Actual browser automation used the installed agent-browser CLI, with screenshots inspected visually. No HTML recreation or mock screenshots were used. Ponytail's minimum surface is a native Claude pane, not a second dashboard server.
 
 Environment: existing code-server container, version 4.109.5 (Code 1.109.5), a separate server process and dedicated profile/extensions directory under this repository's ignored `.human-body-mode/gui/`. No regular editor settings or extensions were changed. Claude Code 2.1.294 ran inside the real integrated terminal with an isolated configuration and Haiku selected. A copy of existing credentials was used for that test only and removed afterwards.

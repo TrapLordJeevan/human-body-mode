@@ -9,7 +9,8 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const project = process.argv[2] || path.join(repo, 'fixture-java')
 const smokeFile = `.human-body-mode/Smoke-${Date.now()}.java`
 const client = new Client({ name: 'human-body-editor-smoke', version: '1' })
-await client.connect(new StdioClientTransport({ command: process.execPath, args: [path.join(repo, 'plugin/server/pair-mcp.cjs')], cwd: project }))
+await client.connect(new StdioClientTransport({ command: process.execPath, args: [path.join(repo, 'plugin/server/pair-mcp.cjs')], cwd: project,
+  env: Object.fromEntries(Object.entries(process.env).filter(([, value]) => typeof value === 'string')) }))
 const call = async (name, args = {}) => {
   const result = await client.callTool({ name, arguments: args })
   assert.ok(!result.isError, JSON.stringify(result.content))
@@ -17,6 +18,7 @@ const call = async (name, args = {}) => {
 }
 try {
   await call('control', { operation: 'reset' })
+  await call('control', { operation: 'resume' })
   await call('start', { cwd: project, task: 'Zero-token real editor smoke test' })
   await call('control', { operation: 'wpm', value: 60 })
   await call('step', { actions: [{ move: { file: smokeFile, line: 1, to: 'line_end' } }, { type: 'class Smoke {\n  int answer() { return 42; }\n}\n▌' }] })

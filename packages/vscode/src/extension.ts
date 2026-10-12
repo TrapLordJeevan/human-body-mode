@@ -16,11 +16,7 @@ export function activate(context: vscode.ExtensionContext): Api {
   const config = () => vscode.workspace.getConfiguration("aiPair")
 
   const editor = new VsCodeEditor(root, config().get("agentName", "Agent"))
-  const speed = {
-    get: () => 1,
-    set: (_value: number) => {},
-  }
-  const panel = new NarrationPanel((file) => editor.resolvePath(file), speed, {
+  const panel = new NarrationPanel((file) => editor.resolvePath(file), {
     current: () => editor.programmerSelection(),
     ref: () => editor.selectionRef(),
   })
@@ -28,11 +24,11 @@ export function activate(context: vscode.ExtensionContext): Api {
   editor.controller = controller
   editor.onSelection = (ref) => panel.showSelection(ref)
   panel.controller = controller
-  controller.setSpeed(speed.get())
+  controller.setSpeed(1)
   controller.setTiming(config().get("timing", {}))
   controller.setConfirmCommands(config().get("confirmCommands", true))
   controller.setSeed(config().get("seed", 20261012))
-  registerExperiment(context, controller, root)
+  registerExperiment(context, controller, root, (data) => panel.showMetrics(data))
 
   const bridge = new Bridge(controller, {
     dir: discoveryDir(),
@@ -50,6 +46,7 @@ export function activate(context: vscode.ExtensionContext): Api {
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => bridge.writeDiscovery()),
     vscode.commands.registerCommand("aiPair.setUpAgent", () => setUpAgent(launcher)),
+    vscode.commands.registerCommand("humanBody.open", () => vscode.commands.executeCommand(`${NarrationPanel.viewId}.focus`)),
     editor,
     vscode.window.registerWebviewViewProvider(NarrationPanel.viewId, panel, {
       webviewOptions: { retainContextWhenHidden: true },

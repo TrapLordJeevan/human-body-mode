@@ -5,9 +5,6 @@
 
 import { randomBytes } from "node:crypto"
 
-/** Speeds offered in the panel's menu. The `aiPair.speed` setting takes any value. */
-export const SPEEDS = [0.4, 0.6, 1, 1.5, 2, 3]
-
 const svg = (paths: string, cls = "") =>
   `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`
 
@@ -23,9 +20,6 @@ const ICONS = {
 
 export function panelHtml(cspSource: string): string {
   const nonce = randomBytes(16).toString("base64")
-  const speeds = SPEEDS.map(
-    (s) => `<button role="menuitemradio" aria-checked="false" data-speed="${s}">${s.toFixed(1)}×</button>`,
-  ).join("")
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -72,6 +66,17 @@ export function panelHtml(cspSource: string): string {
     color: var(--fg);
   }
   #app { display: flex; flex-direction: column; height: 100%; }
+  #dashboard { padding: 12px 14px; border-bottom: 1px solid var(--border); flex: none; }
+  #dashboard h2 { font-size: 13px; margin: 0 0 8px; }
+  #metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-variant-numeric: tabular-nums; margin: 8px 0; }
+  #metrics span { display: block; font-size: 11px; color: var(--muted); }
+  #dashboard .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; align-items: center; }
+  #dashboard label { font-size: 12px; display: flex; gap: 6px; align-items: center; }
+  #dashboard input, #dashboard select { min-width: 0; box-sizing: border-box; padding: 4px; border: 1px solid var(--border); color: var(--vscode-input-foreground, var(--fg)); background: var(--vscode-input-background, var(--surface)); font: inherit; }
+  #target-wpm, #break-seconds { width: 68px; }
+  #operator-command { flex: 1; width: 100%; }
+  #control-error { color: var(--fail); overflow-wrap: anywhere; }
+  #operator-state, #dashboard small { font-size: 11px; color: var(--muted); }
 
   button {
     font: inherit; font-size: 12px; height: 24px; min-width: 24px; box-sizing: border-box; padding: 0 5px;
@@ -127,20 +132,6 @@ export function panelHtml(cspSource: string): string {
   #turn-label { display: none; }
   body.user-turn #turn-label { display: inline; }
   #end { margin-left: 2px; }
-  #speed-wrap { position: relative; }
-  #speed { font-variant-numeric: tabular-nums; }
-  #speed-menu {
-    position: absolute; right: 0; top: 28px; z-index: 10; padding: 4px; border-radius: 6px;
-    display: flex; flex-direction: column; background: var(--vscode-menu-background, var(--surface));
-    color: var(--vscode-menu-foreground, var(--fg));
-    border: 1px solid var(--vscode-menu-border, var(--border));
-    box-shadow: 0 4px 14px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.18));
-  }
-  #speed-menu[hidden] { display: none; }
-  #speed-menu button { justify-content: flex-start; height: 24px; padding: 0 8px; color: inherit; font-variant-numeric: tabular-nums; }
-  #speed-menu button[aria-checked="true"] { background: var(--soft-hover); }
-  #speed-menu button:hover { background: var(--vscode-menu-selectionBackground, var(--soft)); color: var(--vscode-menu-selectionForeground, inherit); }
-
   #now { display: none; margin-top: 8px; }
   body.active #now { display: block; }
   #now-text { font-size: calc(var(--vscode-editor-font-size, 13px) * 1.3); line-height: 1.5; overflow-wrap: anywhere; }
@@ -237,6 +228,41 @@ export function panelHtml(cspSource: string): string {
 </head>
 <body>
 <div id="app">
+  <section id="dashboard" aria-label="Physical input controls">
+    <h2>Human Body Mode</h2>
+    <div id="operator-state" role="status">Editor ready · waiting for agent</div>
+    <div id="metrics">
+      <div><span>Elapsed</span><strong id="metric-elapsed">0s</strong></div>
+      <div><span>Effective WPM (cumulative)</span><strong id="metric-wpm">0</strong></div>
+      <div><span>Physical actions</span><strong id="metric-physical">0s</strong></div>
+      <div><span>Queue wait</span><strong id="metric-queue">0s</strong></div>
+      <div><span>Characters typed</span><strong id="metric-chars">0</strong></div>
+      <div><span>Clipboard operations</span><strong id="metric-clipboard">0</strong></div>
+      <div><span>Commands executed</span><strong id="metric-commands">0</strong></div>
+      <div><span>Blocked attempts</span><strong id="metric-blocked">0</strong></div>
+    </div>
+    <div class="row">
+      <button class="soft" data-control="pause">Pause input</button><button class="soft" data-control="resume">Resume</button>
+      <button class="soft" data-control="reset">Start / reset clock</button><button class="soft" data-control="stop">Stop clock</button>
+      <button class="soft" data-control="export">Export logs</button>
+    </div>
+    <form id="cadence-form" class="row">
+      <label>WPM <input id="target-wpm" type="number" min="1" max="300" value="60" required></label>
+      <label>Cadence <select id="cadence-mode"><option value="variable">Human cadence</option><option value="strict">Strict constant</option></select></label>
+      <button class="primary" type="submit">Apply</button>
+    </form>
+    <small>Changes apply to the next typing block. No artificial mistakes.</small>
+    <form id="break-form" class="row">
+      <label>Break seconds <input id="break-seconds" type="number" min="1" max="86400" value="300" required></label>
+      <button class="soft" type="submit">Take break</button>
+    </form>
+    <form id="command-form" class="row">
+      <input id="operator-command" aria-label="Command to type and run" placeholder="git status" required>
+      <button class="soft" type="submit">Type &amp; run</button>
+    </form>
+    <small>Pause and breaks stop input only; reasoning and running builds continue.</small>
+    <div id="control-error" role="alert"></div>
+  </section>
   <section id="band">
     <div id="main">
       <div id="head">
@@ -245,10 +271,6 @@ export function panelHtml(cspSource: string): string {
           <button id="pause" class="quiet" aria-label="Pause" data-tip="Pause (Space)" aria-keyshortcuts="Space">${ICONS.pause}${ICONS.resume}</button>
           <button id="interrupt" class="quiet" aria-label="Interrupt" data-tip="Interrupt">${ICONS.stop}</button>
           <button id="turn" class="quiet" aria-label="My turn" data-tip="Take the turn: you drive, the agent navigates">${ICONS.swap}<span id="turn-label">My turn</span></button>
-          <div id="speed-wrap">
-            <button id="speed" class="quiet" aria-haspopup="menu" aria-expanded="false" data-tip="Playback speed">1.0×</button>
-            <div id="speed-menu" role="menu" aria-label="Playback speed" hidden>${speeds}</div>
-          </div>
           <button id="end" class="quiet" aria-label="End the session" data-tip="End the session">${ICONS.exit}</button>
         </div>
       </div>
@@ -287,7 +309,7 @@ export function panelHtml(cspSource: string): string {
   const $ = (id) => document.getElementById(id);
   const ui = {
     band: $("band"), dot: $("dot"), status: $("status-text"), pause: $("pause"), interrupt: $("interrupt"),
-    turn: $("turn"), turnLabel: $("turn-label"), speed: $("speed"), speedMenu: $("speed-menu"), end: $("end"),
+    turn: $("turn"), turnLabel: $("turn-label"), end: $("end"),
     now: $("now-text"), ref: $("now-ref"),
     idleTitle: $("idle-title"), idleSummary: $("idle-summary"), idleText: $("idle-text"),
     reply: $("reply"), send: $("send"), attach: $("attach"), attachRef: $("attach-ref"), attachX: $("attach-x"),
@@ -537,20 +559,34 @@ export function panelHtml(cspSource: string): string {
         syncAttach();
         return;
       case "focusReply": ui.reply.focus(); return;
-      case "speed": {
-        // One decimal, so the menu's speeds line up; a setting with more keeps them.
-        const label = (Number.isInteger(e.value * 10) ? e.value.toFixed(1) : String(e.value)) + "×";
-        ui.speed.textContent = label;
-        ui.speed.setAttribute("aria-label", "Playback speed: " + label);
-        for (const b of ui.speedMenu.querySelectorAll("button")) {
-          b.setAttribute("aria-checked", String(Math.abs(Number(b.dataset.speed) - e.value) < 0.01));
-        }
-        return;
-      }
     }
   }
 
   window.addEventListener("message", (m) => handle(m.data));
+  let cadenceDirty = false;
+  window.addEventListener("message", ({ data: e }) => {
+    if (e.type === "controlResult") { $("control-error").textContent = e.error; return; }
+    if (e.type !== "metrics") return;
+    const m = e.data;
+    const seconds = (ms) => Math.round((ms || 0) / 1000) + "s";
+    $("metric-elapsed").textContent = seconds(m.elapsedMs);
+    $("metric-wpm").textContent = (m.effectiveWpm || 0).toFixed(1);
+    $("metric-physical").textContent = seconds(m.physicalActionMs);
+    $("metric-queue").textContent = seconds(m.queueWaitMs);
+    $("metric-chars").textContent = m.charactersTyped || 0;
+    $("metric-clipboard").textContent = m.clipboardOperations || 0;
+    $("metric-commands").textContent = m.commandsExecuted || 0;
+    $("metric-blocked").textContent = m.blockedBypassAttempts || 0;
+    $("operator-state").textContent = (m.paused ? "Input paused" : m.active ? "Agent connected" : "Editor ready · waiting for agent") + (m.breakRemainingMs > 0 ? " · break " + seconds(m.breakRemainingMs) : "") + (m.running ? " · clock running" : " · clock stopped");
+    if (document.activeElement !== $("target-wpm") && !cadenceDirty) $("target-wpm").value = m.configuredWpm || 60;
+    if (document.activeElement !== $("cadence-mode") && !cadenceDirty) $("cadence-mode").value = m.configuredMode || "variable";
+  });
+  const control = (operation, args = {}) => vscode.postMessage({ type: "control", operation, ...args });
+  $("cadence-form").oninput = () => { cadenceDirty = true; };
+  for (const button of document.querySelectorAll("[data-control]")) button.onclick = () => control(button.dataset.control);
+  $("cadence-form").onsubmit = (e) => { e.preventDefault(); control("wpm", { value: Number($("target-wpm").value) }); control("mode", { value: $("cadence-mode").value }); cadenceDirty = false; };
+  $("break-form").onsubmit = (e) => { e.preventDefault(); control("break", { value: Number($("break-seconds").value) }); };
+  $("command-form").onsubmit = (e) => { e.preventDefault(); control("run", { command: $("operator-command").value }); };
 
   let draftEmpty = true;
   function syncDraft() {
@@ -601,25 +637,6 @@ export function panelHtml(cspSource: string): string {
   ui.runSkip.onclick = () => decide(false, false);
   ui.end.onclick = () => vscode.postMessage({ type: "end" });
 
-  function closeSpeedMenu() {
-    ui.speedMenu.hidden = true;
-    ui.speed.setAttribute("aria-expanded", "false");
-    ui.speed.classList.remove("on");
-  }
-  ui.speed.onclick = (e) => {
-    e.stopPropagation();
-    const open = ui.speedMenu.hidden;
-    ui.speedMenu.hidden = !open;
-    ui.speed.setAttribute("aria-expanded", String(open));
-    ui.speed.classList.toggle("on", open);
-    if (open) ui.speedMenu.querySelector('[aria-checked="true"]')?.focus();
-  };
-  for (const b of ui.speedMenu.querySelectorAll("button")) {
-    b.onclick = () => { closeSpeedMenu(); ui.speed.focus(); vscode.postMessage({ type: "speed", value: Number(b.dataset.speed) }); };
-  }
-  document.addEventListener("click", (e) => { if (!ui.speedMenu.hidden && !ui.speedMenu.contains(e.target)) closeSpeedMenu(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !ui.speedMenu.hidden) { closeSpeedMenu(); ui.speed.focus(); } });
-
   // Tooltips: an element's data-tip shows under it after a moment's hover, or at once while one is
   // showing or just was, the way VS Code's own hovers do; and on keyboard focus. A click hides it.
   const TIP_DELAY_MS = 500, TIP_WARM_MS = 300, TIP_GAP = 4, TIP_MARGIN = 6;
@@ -632,7 +649,6 @@ export function panelHtml(cspSource: string): string {
 
   function showTip(el) {
     clearTimeout(tipTimer);
-    if (el === ui.speed && !ui.speedMenu.hidden) return;
     tipTarget = el;
     ui.tip.textContent = el.dataset.tip;
     ui.tip.hidden = false;
@@ -687,7 +703,7 @@ export function panelHtml(cspSource: string): string {
   // button, which after a click could be End; Enter still does.
   document.addEventListener("keydown", (e) => {
     if (e.key !== " " || e.ctrlKey || e.metaKey || e.altKey || !active) return;
-    if (e.target === ui.reply) return;
+    if (["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(e.target.tagName)) return;
     e.preventDefault();
     if (e.repeat || turn === "user") return;
     vscode.postMessage({ type: paused ? "resume" : "pause" });

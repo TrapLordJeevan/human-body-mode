@@ -1,4 +1,4 @@
-// The narration panel: a webview view in the secondary side bar. See "Narration panel" in DESIGN.md.
+// Shared operator dashboard and pairing narration in the primary sidebar.
 
 import * as vscode from "vscode"
 import type { Controller, PanelEvent, PanelPort, Ref, SharedSelection } from "@ai-pair/core"
@@ -20,8 +20,8 @@ type FromPanel =
   | { type: "openUrl"; url: string }
   /** A command the intro offers, like Set Up Agent. */
   | { type: "command"; command: string }
-  | { type: "speed"; value: number }
   | { type: "runDecision"; id: number; run: boolean; remember?: boolean }
+  | { type: "control"; operation: string; value?: unknown; command?: string }
 
 const MAX_LOG = 400
 
@@ -34,10 +34,10 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
   private view?: vscode.WebviewView
   /** Everything posted so far, replayed when the view is (re)created. */
   private readonly log: PanelEvent[] = []
+  private metrics: object = {}
 
   constructor(
     private readonly resolvePath: (file: string) => string,
-    private readonly speed: { get: () => number; set: (value: number) => void },
     private readonly selection: { current: () => SharedSelection | undefined; ref: () => Ref | undefined },
   ) {}
 
@@ -46,9 +46,9 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
     void this.view?.webview.postMessage({ type: "selection", ref })
   }
 
-  /** The speed setting changed. Not logged: only the current value matters. */
-  showSpeed(value: number): void {
-    void this.view?.webview.postMessage({ type: "speed", value })
+  showMetrics(data: object): void {
+    this.metrics = data
+    void this.view?.webview.postMessage({ type: "metrics", data })
   }
 
   post(event: PanelEvent): void {
@@ -86,12 +86,22 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
     switch (m.type) {
       case "ready":
         void this.view?.webview.postMessage({ type: "replay", events: this.log })
-        this.showSpeed(this.speed.get())
         this.showSelection(this.selection.ref())
+        this.showMetrics(this.metrics)
         return
-      case "speed":
-        this.speed.set(m.value)
+      case "control": {
+        if (m.operation === "export" || m.operation === "reset") {
+          void vscode.commands.executeCommand(`humanBody.${m.operation}`)
+        } else if (["pause", "resume", "stop", "wpm", "mode", "break", "run"].includes(m.operation)) {
+          void c?.control(m).then(() => {
+            this.showMetrics({ ...this.metrics, ...c.controlStatus() })
+            void this.view?.webview.postMessage({ type: "controlResult", error: "" })
+          }).catch((error: unknown) => {
+            void this.view?.webview.postMessage({ type: "controlResult", error: String(error) })
+          })
+        }
         return
+      }
       case "reply":
         // Replying means "go on with this", so any pause ends.
         c?.resume()

@@ -3,3 +3,5 @@
 This extension is the visible input broker for the Human Body Mode Claude Code experiment. It is installed together with the repository's Claude Code Mod; alone, it does not enforce the experiment.
 
 It adapts AI Pair's MIT-licensed VS Code playback implementation. See the project `README.md`, `EXPERIMENT.md`, and `LIMITATIONS.md` for setup, protocol, and enforcement boundaries.
+
+Open the dashboard with the keyboard icon in the activity bar, click the bottom WPM indicator, or run **Human Body Mode: Open Dashboard**. Adjust target WPM and Human cadence/Strict constant, pause/resume, take a timed break, reset/stop the clock, export statistics, or enter a command to type through the shared queue. No model requests are made by these controls. Physical input pauses do not suspend reasoning or builds already running.

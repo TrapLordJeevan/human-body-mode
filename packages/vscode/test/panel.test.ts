@@ -2,7 +2,7 @@
 // in a regex, say) only shows as a panel that stays blank. Parse the script as the webview would.
 
 import { expect, it } from "vitest"
-import { panelHtml, SPEEDS } from "../src/panelHtml"
+import { panelHtml } from "../src/panelHtml"
 
 it("has a page script that parses", () => {
   const html = panelHtml("vscode-resource:")
@@ -11,9 +11,12 @@ it("has a page script that parses", () => {
   expect(() => new Function(scripts[0]!)).not.toThrow()
 })
 
-it("offers the speeds with one decimal, so they line up", () => {
+it("offers real WPM, cadence, break and clock controls even without an agent session", () => {
   const html = panelHtml("vscode-resource:")
-  for (const s of SPEEDS) expect(html).toContain(`data-speed="${s}">${s.toFixed(1)}×</button>`)
+  for (const id of ["dashboard", "target-wpm", "cadence-mode", "break-seconds", "operator-command", "metric-physical", "metric-blocked"]) expect(html).toContain(`id="${id}"`)
+  expect(html).toContain('data-control="reset"')
+  expect(html).not.toContain('id="speed-menu"')
+  expect(html).toContain('["INPUT", "SELECT", "TEXTAREA", "BUTTON"]')
 })
 
 it("gives controls the panel's own tooltips, since native ones show unreliably in a webview", () => {

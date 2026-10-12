@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { resolveSpan, resolveSpot } from "../src/places"
 import { applyChange } from "../src/lines"
-import { planTyping, readingTime } from "../src/typing"
+import { planTyping, readingTime, seededRandom } from "../src/typing"
+import { defaultTiming } from "../src/timing"
 import { commandProblem } from "../src/commands"
 import { ExperimentMetrics } from "../src/metrics"
 import { terminalText } from "../src/text"
@@ -151,6 +152,30 @@ describe("line identities", () => {
 })
 
 describe("typing", () => {
+  it("reproduces human bursts, preserves text and keeps 300 characters at a 60-second budget", () => {
+    const text = "Hello, world! Another sentence.\n  int value = 42;\n".repeat(8).slice(0, 300)
+    const plan = (seed: number) => planTyping(text, defaultTiming.type, true, seededRandom(seed))
+    const first = plan(7)
+    expect(first).toEqual(plan(7))
+    expect(first).not.toEqual(plan(8))
+    expect(first.map(c => c.text).join("")).toBe(text)
+    expect(first.reduce((sum, c) => sum + c.delay, 0)).toBeCloseTo(60000)
+    expect(first.every(c => c.delay >= 0)).toBe(true)
+    const strict = planTyping(text, { ...defaultTiming.type, mode: "strict" }, true, seededRandom(7))
+    expect(strict.reduce((sum, c) => sum + c.delay, 0)).toBe(60000)
+  })
+
+  it("adds correlated bursts and sentence pauses without altering the average", () => {
+    const text = "aaaa. bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    const cadence = { ...defaultTiming.type, jitter: 0, wordStartMs: 0, burstJitter: 0, sentenceMs: 300 }
+    const sentence = planTyping(text, cadence, false, seededRandom(1))
+    expect(sentence[5]!.delay).toBeGreaterThan(sentence[4]!.delay)
+    const bursts = planTyping("a".repeat(80), { ...cadence, burstJitter: 0.25 }, false, seededRandom(1))
+    expect(bursts[0]!.delay).toBe(bursts[1]!.delay)
+    expect(new Set(bursts.map(c => c.delay)).size).toBeGreaterThan(2)
+    expect(bursts.reduce((sum, c) => sum + c.delay, 0)).toBeCloseTo(16000)
+  })
+
   const cadence = {
     mode: "variable" as const,
     wpm: 60,
@@ -182,6 +207,10 @@ describe("typing", () => {
   it("strict mode charges exactly 200ms per character at 60 WPM", () => {
     const strict = { ...cadence, mode: "strict" as const }
     expect(planTyping("a\n  b", strict, false, Math.random).reduce((sum, chunk) => sum + chunk.delay, 0)).toBe(1000)
+    expect(planTyping("  b", strict, true, Math.random).reduce((sum, chunk) => sum + chunk.delay, 0)).toBe(600)
+    for (const model of [strict, cadence]) {
+      expect(planTyping(" ".repeat(300), model, true, Math.random).reduce((sum, chunk) => sum + chunk.delay, 0)).toBe(60000)
+    }
   })
 
   it("scales reading time with the word count, within bounds", () => {

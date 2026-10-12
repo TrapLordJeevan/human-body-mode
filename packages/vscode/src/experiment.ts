@@ -5,7 +5,7 @@ import type { Controller, MetricsSnapshot } from "@ai-pair/core"
 
 type Exported = MetricsSnapshot & { blockedBypassAttempts: number }
 
-export function registerExperiment(context: vscode.ExtensionContext, controller: Controller, root: string): void {
+export function registerExperiment(context: vscode.ExtensionContext, controller: Controller, root: string, publish: (data: object) => void): void {
   const dir = path.join(root, ".human-body-mode")
   const stateFile = path.join(dir, "metrics.json")
   const hookLog = path.join(dir, "blocked.jsonl")
@@ -22,14 +22,15 @@ export function registerExperiment(context: vscode.ExtensionContext, controller:
       return 0
     }
   }
-  const data = (): Exported => ({ ...controller.metricsSnapshot(), blockedBypassAttempts: blocked() })
+  const data = (): Exported => ({ ...controller.metricsSnapshot(), ...controller.controlStatus(), blockedBypassAttempts: blocked() })
   const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100)
-  item.command = "humanBody.export"
+  item.command = "humanBody.open"
   item.name = "Human Body Mode"
   item.show()
 
   const update = () => {
     const m = data()
+    publish(m)
     item.text = `$(keyboard) ${Math.round(m.elapsedMs / 1000)}s · ${m.charactersTyped} chars · ${m.effectiveWpm.toFixed(1)} WPM · ${m.blockedBypassAttempts} blocked`
     item.tooltip = `Physical actions ${Math.round(m.physicalActionMs / 1000)}s; queue wait ${Math.round(m.queueWaitMs / 1000)}s; clipboard ${m.clipboardOperations}; commands ${m.commandsExecuted}`
     fs.mkdirSync(dir, { recursive: true })

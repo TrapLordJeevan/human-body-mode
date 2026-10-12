@@ -15,7 +15,11 @@ npm ci
 npm run build:plugin
 ```
 
-Download `human-body-mode-0.1.0.vsix` from the [GitHub prerelease](https://github.com/TrapLordJeevan/human-body-mode/releases/tag/v0.1.0), then use VS Code's **Extensions → Install from VSIX**. For Remote–SSH, install it in the **SSH host**, not just your laptop. Open the target project there; the CLI and extension host must run on the same server/container and OS user. Use Bash shell integration and `aiPair.confirmCommands: false`, as in the supplied `config/` examples.
+Download `human-body-mode-0.1.1.vsix` from the [GitHub prerelease](https://github.com/TrapLordJeevan/human-body-mode/releases/tag/v0.1.1), or build it with `npm run package`, then use VS Code's **Extensions → Install from VSIX**. The older 0.1.0 package does not include the dashboard. For Remote–SSH/WSL, install it in the **remote host**, not just your laptop. Open the target project there; the CLI and extension host must run on the same server/container and OS user. Use Bash shell integration and `aiPair.confirmCommands: false`, as in the supplied `config/` examples.
+
+Click the **keyboard icon in the left activity bar**, or the bottom WPM indicator, to open the Human Body Mode dashboard. Alternatively run **Human Body Mode: Open Dashboard** from the command palette. It is available before an agent connects and shows elapsed/physical/queue time, cumulative effective WPM, characters, clipboard operations, commands and blocked attempts. Controls include WPM, human/strict cadence, Pause/Resume, a timed break with countdown, clock Start/Reset/Stop, Export, and a command field that uses the same input queue and command allowlist. WPM/cadence apply to the next typing block; changes are session-local. The old playback multiplier is intentionally removed. Previously installed windows may retain their old view location; use Open Dashboard or VS Code's View: Reset View Locations if needed.
+
+Human cadence uses reproducible character jitter, correlated 4–13-character typing bursts, and word/punctuation/bracket/newline/sentence pauses, normalized to the configured average per block. Strict mode stays constant. No artificial typos or false starts are inserted: correctness reflects the agent's authored text. This is an independently implemented timing model, not copied Dripwriter source and not empirically validated as a complete human motor model.
 
 From this clone, enable the launchers for this shell only, then move to your project:
 

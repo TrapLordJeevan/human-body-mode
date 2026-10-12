@@ -2,14 +2,14 @@
 
 ## Clock and controls
 
-Use the VS Code commands `Human Body Mode: Start Experiment Clock`, `Stop Experiment Clock`, `Reset Experiment`, and `Export Experiment Logs`. The status bar shows elapsed time, authored characters, effective active-typing WPM, and blocked attempts. Export writes JSON and CSV under the target repository's `.human-body-mode/` directory.
+Open the VS Code dashboard using its keyboard activity-bar icon, bottom WPM indicator, or `Human Body Mode: Open Dashboard`. It provides WPM, cadence, pause/resume, timed breaks, clock reset/stop, queued commands and export controls. The original clock/export commands and Claude TUI/companion terminal controls remain available. Export writes JSON and CSV under the target repository's `.human-body-mode/` directory. Effective WPM is cumulative over all physical actions, not instantaneous typing speed.
 
 Prompt-writing time is included when the supervisor resets immediately before entering the task prompt. Elapsed wall time is never derived by adding action and wait intervals, so overlapping reasoning is not double-counted. Physical-action time sums the single queue's actual delays. Queue wait records the union of FIFO waiting intervals, not a per-agent sum; it overlaps physical playback and must not be added to it.
 
 ## Input rules
 
 - Strict 60 WPM uses the conventional five-character word: every authored character costs exactly 200 ms. The 300-character real-time test allows scheduler overhead.
-- Variable mode uses a seeded bounded jitter model plus punctuation, word-start, bracket, indentation, and newline rhythm, normalized per authored block to the configured average.
+- Variable mode uses seeded character jitter, correlated 4–13-character typing bursts, sentence-boundary pauses and punctuation, word-start, bracket, indentation and newline rhythm, normalized per authored block to the configured average. No artificial mistakes/false starts are inserted. This is not fitted to measured human keystrokes; per-block normalization and IDE-style indentation are experimental biases. Manual breaks add wall time outside that normalization and stop physical input only.
 - `type_fast` remains for AI Pair wire compatibility but is deliberately the same speed as `type`.
 - Copy/cut capture only the current editor selection into a broker-owned clipboard. Paste accepts no text argument, so model-authored text cannot become a fast clipboard payload.
 - Movement, file opening, selection, deletion, narration, and command entry have physical delays. Builds and program output run at native speed.
