@@ -2,13 +2,37 @@ import { describe, expect, it } from "vitest"
 import { resolveSpan, resolveSpot } from "../src/places"
 import { applyChange } from "../src/lines"
 import { planTyping, readingTime } from "../src/typing"
+import { commandProblem } from "../src/commands"
+import { ExperimentMetrics } from "../src/metrics"
 import { terminalText } from "../src/text"
 import { samePath, withinFolder, type PathStyle } from "../src/paths"
+
+it("counts overlapping FIFO queue waits once and clamps intervals at reset", () => {
+  const metrics = new ExperimentMetrics()
+  metrics.reset(1000)
+  metrics.addQueueWait(1100, 1500)
+  metrics.addQueueWait(1200, 1600)
+  metrics.addQueueWait(1700, 1900)
+  expect(metrics.snapshot(2000).queueWaitMs).toBe(700)
+  metrics.reset(1800)
+  metrics.addQueueWait(1700, 2000)
+  expect(metrics.snapshot(2000).queueWaitMs).toBe(200)
+})
 
 describe("terminal text", () => {
   it("drops colors and shell integration sequences, and resolves progress overwrites", () => {
     const raw = "\x1b]633;C\x07\x1b[32m✓\x1b[0m 4 passed\r\n 10%\r 50%\r100%\r\n\x1b]633;D;0\x07"
     expect(terminalText(raw)).toBe("✓ 4 passed\n100%")
+  })
+})
+
+describe("command allowlist", () => {
+  it("allows builds and read-only git but rejects source-writing shells", () => {
+    expect(commandProblem("git diff --stat")).toBeUndefined()
+    expect(commandProblem("./mvnw -q test")).toBeUndefined()
+    expect(commandProblem("javac -d target/classes src/Main.java")).toBeUndefined()
+    expect(commandProblem("printf code > src/Main.java")).toMatch(/redirection/)
+    expect(commandProblem("python generate.py")).toMatch(/allowlist/)
   })
 })
 
@@ -127,30 +151,27 @@ describe("line identities", () => {
 })
 
 describe("typing", () => {
-  const cadence = { charMs: 100, jitter: 0, wordStartMs: 50, punctuationMs: 30, openBracketMs: 20, newlineMs: 250 }
+  const cadence = {
+    mode: "variable" as const,
+    wpm: 60,
+    charMs: 200,
+    jitter: 0.4,
+    wordStartMs: 50,
+    punctuationMs: 30,
+    openBracketMs: 20,
+    newlineMs: 250,
+  }
   const delays = (text: string, atLineStart = false) =>
     planTyping(text, cadence, atLineStart, Math.random).map((c) => [c.text, c.delay])
 
-  it("pauses as words start, and after punctuation and opening brackets", () => {
-    expect(delays("ab c(d, e")).toEqual([
-      ["a", 100],
-      ["b", 100],
-      [" ", 100],
-      ["c", 150],
-      ["(", 100],
-      ["d", 170],
-      [",", 100],
-      [" ", 130],
-      ["e", 150],
-    ])
+  it("keeps variable timing calibrated to the configured average", () => {
+    const planned = delays("ab c(d, e")
+    expect(planned.reduce((sum, [, delay]) => sum + Number(delay), 0)).toBeCloseTo(9 * 200)
+    expect(new Set(planned.map(([, delay]) => delay)).size).toBeGreaterThan(1)
   })
 
   it("inserts a newline together with the following indentation, then pauses", () => {
-    expect(delays("x\n  y")).toEqual([
-      ["x", 100],
-      ["\n  ", 100],
-      ["y", 400],
-    ])
+    expect(delays("x\n  y").map(([text]) => text)).toEqual(["x", "\n  ", "y"])
   })
 
   it("inserts leading indentation at once at the start of a line", () => {
@@ -158,8 +179,9 @@ describe("typing", () => {
     expect(delays("  x").map(([t]) => t)).toEqual([" ", " ", "x"])
   })
 
-  it("scales every delay for type_fast", () => {
-    expect(planTyping("a b", cadence, false, Math.random, 0.5).map((c) => c.delay)).toEqual([50, 50, 75])
+  it("strict mode charges exactly 200ms per character at 60 WPM", () => {
+    const strict = { ...cadence, mode: "strict" as const }
+    expect(planTyping("a\n  b", strict, false, Math.random).reduce((sum, chunk) => sum + chunk.delay, 0)).toBe(1000)
   })
 
   it("scales reading time with the word count, within bounds", () => {

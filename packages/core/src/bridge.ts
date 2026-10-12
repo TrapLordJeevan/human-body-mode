@@ -147,6 +147,7 @@ export class Bridge {
 
   private async dispatch(ws: WebSocket, tool: ToolName, args: Record<string, unknown>, signal: AbortSignal): Promise<unknown> {
     const c = this.controller
+    if (tool === "control") return c.control(args)
     if (tool === "start") {
       if (c.isActive && this.owner !== ws) {
         throw new ToolError("session_active", "Another agent is already pairing in this editor window.")

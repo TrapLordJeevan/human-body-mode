@@ -1,0 +1,36 @@
+# Experiment protocol
+
+## Clock and controls
+
+Use the VS Code commands `Human Body Mode: Start Experiment Clock`, `Stop Experiment Clock`, `Reset Experiment`, and `Export Experiment Logs`. The status bar shows elapsed time, authored characters, effective active-typing WPM, and blocked attempts. Export writes JSON and CSV under the target repository's `.human-body-mode/` directory.
+
+Prompt-writing time is included when the supervisor resets immediately before entering the task prompt. Elapsed wall time is never derived by adding action and wait intervals, so overlapping reasoning is not double-counted. Physical-action time sums the single queue's actual delays. Queue wait records the union of FIFO waiting intervals, not a per-agent sum; it overlaps physical playback and must not be added to it.
+
+## Input rules
+
+- Strict 60 WPM uses the conventional five-character word: every authored character costs exactly 200 ms. The 300-character real-time test allows scheduler overhead.
+- Variable mode uses a seeded bounded jitter model plus punctuation, word-start, bracket, indentation, and newline rhythm, normalized per authored block to the configured average.
+- `type_fast` remains for AI Pair wire compatibility but is deliberately the same speed as `type`.
+- Copy/cut capture only the current editor selection into a broker-owned clipboard. Paste accepts no text argument, so model-authored text cannot become a fast clipboard payload.
+- Movement, file opening, selection, deletion, narration, and command entry have physical delays. Builds and program output run at native speed.
+- Commands pass a small executable/subcommand allowlist, reject shell syntax, incur authored-command timing, and run inside bubblewrap. The repository is read-only there; only `target`, `build`, `.gradle`, and `.human-body-mode` are writable.
+- The adapted AI Pair controller serializes tool calls and playback. Subagents can reason concurrently but reach the same controller and cannot create another typing lane.
+
+## Enforcement layers
+
+1. The Claude Code Mod intercepts `tool.call`, including subagent calls. It allows read/search/reasoning tools and the Human Body `pair` MCP tools; direct `Write`, `Edit`, `Bash`, PowerShell, and unknown MCP tools are denied and logged.
+2. The MCP relay has no file mutation operation. Its `step` requests cross an authenticated loopback WebSocket to the VS Code extension.
+3. The extension owns the single action queue and provenance clipboard.
+4. Terminal subprocesses execute with the source tree read-only under bubblewrap.
+5. The later real-Claude launcher places the Claude process itself in a read-only bubblewrap view of the project, leaving only declared outputs writable.
+
+## Experimental bias
+
+Normal model-facing prompts and guides do not disclose an experiment or demand deliberate bypass probes. Run security/adversarial checks with external scripted drivers, separately from the coding trial. Keep operator documents and observations outside the target repository. This does not guarantee blinding: an unrestricted agent may infer the purpose from tool names, timing, installed source or public documentation. The historical Codex smoke used a disclosed diagnostic prompt and must not be presented as a blinded result.
+
+Edits use visible VS Code `TextEditor.edit` calls rather than OS keyboard injection. Autoindent, save participants, autocomplete settings, font/rendering speed, machine load, and Java/VS Code versions can affect results. Pin the machine image and workspace settings for both competitors. AI reasoning can overlap physical playback, as a human can think while typing. Clipboard reuse favours tasks with repetitive existing code, intentionally matching ordinary IDE use.
+
+The implementation adapts AI Pair at its reviewed upstream commit and retains its MIT license. API and architecture sources are captured in `docs/RESEARCH.md`.
+# Codex compatibility addendum
+
+Codex uses the same editor controller, seeded timing, clipboard provenance, command broker and metrics as Claude. The adapter changes the harness only: session-local CLI config supplies native PreToolUse hooks and MCP, with native shell sandbox set to read-only. Read-only inspection is unrestricted in volume, but its direct-shell grammar is narrower than an ordinary shell; odd commands should use repository files/pair read. Supervisor controls live in a second terminal rather than inside the agent TUI. Existing MCP servers are disabled for that session; trusted plugin/hosted paths are not proven isolated. These differences are experimental bias and must be recorded when comparing harnesses. A real Codex Two Fer integration smoke passed; its known, very small exercise, single fixed prompt, default reasoning and non-dedicated server load are not a valid productivity comparison. It did not measure a human composing that prompt or test Claude's separate Mod. See docs/CODEX-BENCHMARK.md.

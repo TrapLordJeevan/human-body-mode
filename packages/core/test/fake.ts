@@ -151,7 +151,16 @@ export class FakePanel implements PanelPort {
 export const testConfig: Config = {
   ...defaultConfig,
   timing: {
-    type: { charMs: 100, jitter: 0.25, wordStartMs: 0, punctuationMs: 0, openBracketMs: 0, newlineMs: 0 },
+    type: {
+      mode: "variable",
+      wpm: 120,
+      charMs: 100,
+      jitter: 0.25,
+      wordStartMs: 0,
+      punctuationMs: 0,
+      openBracketMs: 0,
+      newlineMs: 0,
+    },
     fastFactor: 0.1,
     reading: { msPerWord: 100, minMs: 500, maxMs: 2000 },
     beforeMoveMs: 100,
@@ -165,6 +174,7 @@ export const testConfig: Config = {
   },
   navigatorIdleMs: 1000,
   random: () => 0.5,
+  commandTyping: false,
 }
 
 export function setup(files: Record<string, string> = {}, config: Partial<Config> = {}) {

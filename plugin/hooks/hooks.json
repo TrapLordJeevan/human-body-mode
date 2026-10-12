@@ -1,0 +1,4 @@
+{
+  "description": "Fail-closed physical-input enforcement for Human Body Mode",
+  "modules": ["./register.js"]
+}

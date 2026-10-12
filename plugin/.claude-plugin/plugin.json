@@ -1,0 +1,14 @@
+{
+  "name": "human-body-mode",
+  "displayName": "Human Body Mode",
+  "version": "0.1.0",
+  "description": "Routes all source changes and terminal commands through one human-speed VS Code input queue.",
+  "author": { "name": "Human Body Mode contributors" },
+  "license": "MIT",
+  "mcpServers": {
+    "pair": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server/pair-mcp.cjs"]
+    }
+  }
+}

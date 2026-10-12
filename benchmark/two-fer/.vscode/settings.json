@@ -1,0 +1,8 @@
+{
+  "aiPair.seed": 20261012,
+  "aiPair.confirmCommands": false,
+  "aiPair.timing": { "type": { "mode": "strict", "wpm": 60 } },
+  "terminal.integrated.defaultProfile.linux": "bash",
+  "terminal.integrated.profiles.linux": { "bash": { "path": "/bin/bash" } },
+  "terminal.integrated.shellIntegration.enabled": true
+}

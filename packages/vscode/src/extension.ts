@@ -6,6 +6,7 @@ import { playDemo } from "./demo"
 import { VsCodeEditor } from "./editor"
 import { NarrationPanel } from "./panel"
 import { registerServerProvider, setUpAgent, writeLauncher } from "./setup"
+import { registerExperiment } from "./experiment"
 
 /** Returned from `activate`, for integration tests. */
 export type Api = { controller: Controller; playDemo: () => Promise<void>; launcher: string; ready: Promise<void> }
@@ -16,8 +17,8 @@ export function activate(context: vscode.ExtensionContext): Api {
 
   const editor = new VsCodeEditor(root, config().get("agentName", "Agent"))
   const speed = {
-    get: () => config().get("speed", 1),
-    set: (value: number) => void config().update("speed", value, vscode.ConfigurationTarget.Global),
+    get: () => 1,
+    set: (_value: number) => {},
   }
   const panel = new NarrationPanel((file) => editor.resolvePath(file), speed, {
     current: () => editor.programmerSelection(),
@@ -30,6 +31,8 @@ export function activate(context: vscode.ExtensionContext): Api {
   controller.setSpeed(speed.get())
   controller.setTiming(config().get("timing", {}))
   controller.setConfirmCommands(config().get("confirmCommands", true))
+  controller.setSeed(config().get("seed", 20261012))
+  registerExperiment(context, controller, root)
 
   const bridge = new Bridge(controller, {
     dir: discoveryDir(),
@@ -52,10 +55,6 @@ export function activate(context: vscode.ExtensionContext): Api {
       webviewOptions: { retainContextWhenHidden: true },
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration("aiPair.speed")) {
-        controller.setSpeed(speed.get())
-        panel.showSpeed(speed.get())
-      }
       if (e.affectsConfiguration("aiPair.timing")) controller.setTiming(config().get("timing", {}))
       if (e.affectsConfiguration("aiPair.agentName")) editor.setAgentName(config().get("agentName", "Agent"))
       if (e.affectsConfiguration("aiPair.confirmCommands")) {

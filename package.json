@@ -1,14 +1,21 @@
 {
-  "name": "ai-pair",
+  "name": "human-body-mode",
   "private": true,
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
     "build": "npm run build -w packages/vscode",
+    "build:plugin": "node scripts/build-plugin.mjs",
     "release": "node scripts/release.mjs",
     "package": "npm run package -w packages/vscode",
-    "test": "vitest run",
+    "test": "vitest run packages",
+    "test:mod": "claude plugin test plugin",
+    "test:codex-offline": "node scripts/codex-offline-smoke.mjs",
+    "test:timing-real": "vitest run benchmark/strict-timing.test.ts --testTimeout=70000",
+    "test:sandbox": "sh scripts/verify-sandbox.sh",
+    "verify:core": "npm run typecheck && npm test && npm run test:sandbox && npm run build:plugin && npm run package",
+    "verify": "npm run verify:core && npm run test:mod",
     "test:integration": "npm run test:integration -w packages/vscode",
     "typecheck": "tsc -p ."
   },
@@ -21,6 +28,6 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/faiface/ai-pair.git"
+    "url": "https://github.com/TrapLordJeevan/human-body-mode.git"
   }
 }

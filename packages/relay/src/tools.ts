@@ -84,9 +84,12 @@ const Action = z.union([
   }),
   action({
     type_fast: typeText.describe(
-      "Like `type`, several times faster, for text the programmer doesn't need to read: imports, config, boilerplate. Only the speed changes: closes still come first.",
+      "Compatibility alias for `type`; Human Body Mode deliberately applies the same WPM limit to newly authored text.",
     ),
   }),
+  action({ copy: z.literal(true).describe("Copy the current editor selection into the broker-owned provenance clipboard; `select` first.") }),
+  action({ cut: z.literal(true).describe("Copy the current selection into the provenance clipboard, then delete it; `select` first.") }),
+  action({ paste: z.literal(true).describe("Paste only the broker-owned content previously captured by `copy` or `cut`. Raw paste text is never accepted.") }),
   action({ delete: z.literal(true).describe("Delete the current selection; `select` first.") }),
   action({
     point: Span.describe(
@@ -165,7 +168,7 @@ An empty batch waits for your queued batches without waiting for the programmer.
   },
   end: {
     description:
-      "End the session, when the programmer says they're done. Anything still queued plays out first. Afterwards the pair tools are unavailable until the next `start`; continue the conversation normally.",
+      "End the session when the requested work is complete or the user asks to stop. Anything still queued plays out first. Afterwards the pair tools are unavailable until the next `start`; continue the conversation normally.",
     inputSchema: {
       summary: z.string().optional().describe("One or two sentences, shown to the programmer as the closing message."),
     },

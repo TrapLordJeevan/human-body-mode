@@ -1,0 +1,8 @@
+{
+  "settings": {
+    "aiPair.speed": 1,
+    "aiPair.seed": 20261012,
+    "aiPair.confirmCommands": false,
+    "aiPair.timing": { "type": { "mode": "variable", "wpm": 60 } }
+  }
+}

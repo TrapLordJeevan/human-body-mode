@@ -34,12 +34,15 @@ export type Action =
   /** The text, with `▌` where the cursor ends: what's after it is typed too, and stepped back over. */
   | { type: string }
   | { type_fast: string }
+  | { copy: true }
+  | { cut: true }
+  | { paste: true }
   | { delete: true }
   | { point: SpanTarget }
   | { run: string; wait?: number }
 
 /** The keys that name an action. An action object has exactly one of them. */
-export const ACTION_KINDS = ["say", "move", "select", "type", "type_fast", "delete", "point", "run"] as const
+export const ACTION_KINDS = ["say", "move", "select", "type", "type_fast", "copy", "cut", "paste", "delete", "point", "run"] as const
 
 /** The action keys an object has; more than one means actions were combined by mistake. */
 export function actionKinds(value: object): string[] {

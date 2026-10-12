@@ -1,0 +1,50 @@
+#!/usr/bin/env node
+// Companion supervisor terminal for either model. Uses the existing MCP bridge, no second scheduler.
+async function main() {
+  const path = require('node:path')
+  const readline = require('node:readline')
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js')
+  const { StdioClientTransport } = await import('@modelcontextprotocol/sdk/client/stdio.js')
+  const client = new Client({ name: 'human-body-supervisor', version: '1' })
+  await client.connect(new StdioClientTransport({ command: process.execPath, args: [path.resolve(__dirname, '../plugin/server/pair-mcp.cjs')], cwd: process.cwd(),
+    env: Object.fromEntries(Object.entries(process.env).filter(([, value]) => typeof value === 'string')) }))
+  async function control(line) {
+    const [operation, ...rest] = line.trim().split(/\s+/)
+    if (!['status', 'pause', 'resume', 'wpm', 'break', 'reset', 'stop', 'run'].includes(operation)) throw new Error('Use status, pause, resume, wpm NUMBER, break SECONDS, reset, stop, run COMMAND, or quit.')
+    const args = { operation }
+    if (operation === 'wpm' || operation === 'break') {
+      args.value = Number(rest.join(' '))
+      if (!rest.length || !Number.isFinite(args.value)) throw new Error('A numeric value is required.')
+    }
+    if (operation === 'run') args.command = rest.join(' ')
+    const result = await client.callTool({ name: 'control', arguments: args })
+    const text = result.content.filter(c => c.type === 'text').map(c => c.text).join('\n')
+    if (result.isError) throw new Error(text)
+    return JSON.parse(text)
+  }
+  try {
+    if (process.argv[2] !== 'watch') { console.log(JSON.stringify(await control(process.argv.slice(2).join(' ') || 'status'), null, 2)); return }
+    console.log('Human Body supervisor — pause/resume, wpm 60, break 300, run git status, reset/stop, quit')
+    let busy = false
+    const poll = async () => {
+      if (busy) return
+      busy = true
+      try {
+        const s = await control('status')
+        let blocked = 0
+        try { blocked = require('node:fs').readFileSync(path.join(process.cwd(), '.human-body-mode/blocked.jsonl'), 'utf8').trim().split('\n').filter(Boolean).length } catch {}
+        console.log(`elapsed ${(s.elapsedMs / 1000).toFixed(1)}s | physical ${(s.physicalActionMs / 1000).toFixed(1)}s | queue ${(s.queueWaitMs / 1000).toFixed(1)}s | target ${s.configuredWpm} WPM | effective ${s.effectiveWpm?.toFixed(1)} | chars ${s.charactersTyped} | clipboard ${s.clipboardOperations} | commands ${s.commandsExecuted} | blocked (persistent) ${blocked} | ${s.paused ? 'PAUSED' : 'RUNNING'}`)
+      } catch (error) { console.error(error.message) } finally { busy = false }
+    }
+    await poll()
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+    const timer = setInterval(poll, 2000)
+    try {
+      for await (const line of rl) {
+        if (line.trim() === 'quit') break
+        try { await control(line); await poll() } catch (error) { console.error(error.message) }
+      }
+    } finally { clearInterval(timer); rl.close() }
+  } finally { await client.close() }
+}
+main().catch(error => { console.error(error.message); process.exitCode = 1 })

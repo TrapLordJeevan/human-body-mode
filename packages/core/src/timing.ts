@@ -3,6 +3,10 @@
 // The programmer can override any of them with the `aiPair.timing` setting.
 
 export type Cadence = {
+  /** Benchmark model. Strict is exactly wpm*5 characters/minute. */
+  mode: "variable" | "strict"
+  /** Five-character words per minute. */
+  wpm: number
   /** Between characters within a word. */
   charMs: number
   /** Random variation of `charMs`, e.g. 0.25 for ±25%. */
@@ -44,14 +48,16 @@ export type Timing = {
 
 export const defaultTiming: Timing = {
   type: {
-    charMs: 55,
-    jitter: 0.25,
-    wordStartMs: 110,
-    punctuationMs: 90,
-    openBracketMs: 70,
-    newlineMs: 350,
+    mode: "variable",
+    wpm: 60,
+    charMs: 200,
+    jitter: 0.4,
+    wordStartMs: 35,
+    punctuationMs: 70,
+    openBracketMs: 30,
+    newlineMs: 100,
   },
-  fastFactor: 0.25,
+  fastFactor: 1,
   reading: { msPerWord: 270, minMs: 1500, maxMs: 9000 },
   beforeMoveMs: 150,
   afterMoveNearMs: 450,
@@ -74,5 +80,7 @@ export function withOverrides(base: Timing, overrides: TimingOverrides): Timing 
     ...overrides,
     type: { ...base.type, ...overrides.type },
     reading: { ...base.reading, ...overrides.reading },
+    // Authored text has no fast path in Human Body Mode, including through settings.
+    fastFactor: 1,
   }
 }

@@ -1,212 +1,111 @@
-# <img src="packages/vscode/media/icon.png" alt="" width="40" align="top"> AI Pair Programmer
+# Human Body Mode
 
-**[Install it from the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=michalstrba.ai-pair)**
+Human Body Mode is an adapted AI Pair VS Code extension plus a Claude Code Mod and a Codex CLI adapter. Both agents use the same visible, measured physical-input queue.
 
-## For those of us who want, need, or love to stay close to the code
+**Experimental, supervised dry-run tooling—not a fully enforced security boundary.** Codex completed a small real-editor Java task; full Claude completion and desktop Remote–SSH are not verified. Read [LIMITATIONS.md](LIMITATIONS.md) before comparing results.
 
-> A **mirror neuron** is a neuron that fires both when an animal acts and when
-> the animal observes the same action performed by another.
->
-> — [Wikipedia](https://en.wikipedia.org/wiki/Mirror_neuron)
+## Teammate quick start
 
-**Be there for every keystroke**
+Use Linux with Node 20+, bubblewrap, VS Code, and either an existing Codex or Claude Code installation. No Marketplace account is needed.
 
-![The agent explains the update method in the Pair panel, then types it in the editor](media/every-keystroke.gif)
-
-Some of us, at least some of the time, want to understand our code at a deep
-level. For that, handing a task to an agent and reviewing the diff that comes
-back can be exhausting. With *AI Pair Programmer*, you're there for every
-keystroke instead, and you end up knowing the code almost as if you'd typed it
-yourself.
-
-It's pair programming where your coding agent has the keyboard. It types in
-your editor slowly enough to follow and explains what it's doing. Interrupt it
-whenever you like, or take over and let it watch you for a change.
-
-**Interrupt and steer**
-
-![The programmer asks the agent to fix its imports, and it adds them at the top of the file](media/interrupt-and-steer.gif)
-
-**Watch it change its mind in real time**
-
-![The agent writes a comment, reconsiders, deletes it, and documents the type differently](media/change-its-mind.gif)
-
-It's also a good way to learn a new technology, or to have the agent walk you
-through code you don't know yet.
-
-**Ask it to explain code line by line**
-
-![The agent walks through a function line by line, highlighting each line and explaining it in the Pair panel](media/explain-line-by-line.gif)
-
-It works in VS Code, with the coding agent you already use. Setup is built in
-for Claude Code, Codex, OpenCode, Gemini CLI, Cursor and GitHub Copilot, and
-any agent that supports MCP can be connected by hand.
-
-**Note:** It works best with strong models; weaker ones tend to struggle with
-this way of working.
-
-## How to use it
-
-Once the extension is [installed](#install) and
-[connected to your agent](#connect-your-agent), keep using your agent as usual.
-When you want to pair:
-
-1. Open the project in VS Code, and start your agent **in the same folder** (or
-   a subfolder of it).
-2. Ask it to pair: *"Let's pair on adding a settings page."* In Claude Code,
-   you can also run `/mcp__pair__start`. If you want to learn the technology
-   too, say so: *"…I'm new to Svelte, explain as you go."*
-3. The **Pair** panel opens in the secondary side bar, and the agent's cursor
-   appears in your editor.
-
-Anything you say or edit interrupts the agent, so its next move takes it into
-account. While you pair:
-
-| To… | Do this |
-|---|---|
-| say something to the agent | type in the reply box, press Enter. Typing pauses playback. |
-| ask about some code | select it in the editor, then reply: the selection goes along (× leaves it out) |
-| let it run a command | the agent's tests and builds play in an *AI Pair* terminal; **Run**, **Allow for session**, or **Skip** in the panel |
-| stop it right now | **Interrupt**, or just edit the code: any edit interrupts |
-| look around | scroll or switch files. Playback pauses until you **Resume**, which brings you back to the agent's cursor |
-| write a part yourself | **My turn**. The agent becomes the navigator and comments as you type. **Hand back** returns the turn, with your reply if you typed one |
-| change the pace | the speed menu (**1.0×**), from 0.4× to 3.0× |
-| finish | **End**, or tell the agent you're done. You can pair again anytime |
-
-The cursor's color tells you what the agent is doing. It's yellow and pulsing
-when it's just said something and is waiting for you to read it.
-
-**Try it without an agent:** *AI Pair: Play Demo Session* plays a scripted
-session that adds a small API to an Express app, which it creates in
-`ai-pair-demo/`.
-
-## How it works under the hood
-
-```
-agent (Claude Code, …) ── stdio MCP ──▶ pair-mcp ── local WebSocket ──▶ VS Code extension
+```sh
+git clone https://github.com/TrapLordJeevan/human-body-mode.git
+cd human-body-mode
+npm ci
+npm run build:plugin
 ```
 
-The agent submits small batches of actions: say, move, select, type, delete,
-point, run. The extension plays them at a human pace and reports back exactly
-what happened, including everything you did in the meantime. The agent plans
-its next batch while you watch the current one, which hides most of its
-thinking time. And it's never more than one batch ahead, so your interruptions
-land immediately.
+Download `human-body-mode-0.1.0.vsix` from the [GitHub prerelease](https://github.com/TrapLordJeevan/human-body-mode/releases/tag/v0.1.0), then use VS Code's **Extensions → Install from VSIX**. For Remote–SSH, install it in the **SSH host**, not just your laptop. Open the target project there; the CLI and extension host must run on the same server/container and OS user. Use Bash shell integration and `aiPair.confirmCommands: false`, as in the supplied `config/` examples.
 
-The design is written up in:
+From this clone, enable the launchers for this shell only, then move to your project:
 
-- [PROTOCOL.md](PROTOCOL.md): the tools and their exact semantics, as the agent sees them.
-- [AGENT_GUIDE.md](AGENT_GUIDE.md): how the agent should pair, returned to it when a session starts.
-- [DESIGN.md](DESIGN.md): what you see: the cursor, the panel, the timing.
-- [ARCHITECTURE.md](ARCHITECTURE.md): the components and how they connect.
+```sh
+export PATH="$PWD/bin:$PATH"
+cd /path/to/your/project
+codex --human-body
+# Or: claude --human-body
+```
+
+Ask normally: **“Please read this project and complete the work. If you have questions, ask me.”** In another terminal at the project, `human-body reset` starts the clock before you write your prompt; `human-body watch` shows stats and accepts controls. Claude also offers `/human-body` inside its TUI. Omit the flag for normal operation. The editor backend remains required.
+
+Keep the tool's checkout, operator docs and trial logs outside the target project. Normal agent instructions describe the editor workflow, not a benchmark or competition; they do not ask the agent to probe bypasses. The public source and visible tool behaviour can still reveal or suggest the setup if the agent investigates them—this is **non-disclosing prompting**, not guaranteed blinding.
+
+## Build and verify
+
+Requirements: Linux, Node 20+, npm, bubblewrap, Claude Code 2.1.287+ (validation/tests do not consume model usage), and VS Code 1.105+ for the real editor test.
+
+```sh
+npm ci
+npm run verify:core  # no Claude installation required
+npm run verify
+npm run test:timing-real  # intentionally takes about 60 seconds
+```
+
+`verify:core` is the portable source/build check. `verify` also needs Claude Code on PATH for its offline Mod checks; those checks do not call a model. `npm run release` builds a source archive and VSIX locally from a clean committed tree; it does not publish or change a remote.
+
+Artifacts are `human-body-mode-0.1.0.vsix` and `plugin/` (including its bundled MCP server).
 
 ## Install
 
-You need **VS Code 1.105 or newer**. Install **AI Pair** from the
-[VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=michalstrba.ai-pair): in the
-Extensions view, search for `@id:michalstrba.ai-pair`, or run:
+```sh
+code --install-extension human-body-mode-0.1.0.vsix
+claude --plugin-dir "$PWD/plugin"
+```
+
+Open only the disposable competition repository in VS Code. Run **Human Body Mode: Reset Experiment**, then ask Claude to start the `pair` MCP session. Settings examples are in `config/`.
+
+### Short toggle and terminal controls
+
+For this shell only (no global configuration change):
 
 ```sh
-code --install-extension michalstrba.ai-pair
+export PATH="$PWD/bin:$PATH"  # run while in this clone
+cd /path/to/competition-project
+claude --dangerously-skip-permissions --human-body
 ```
 
-To build it from source instead, you also need **Node.js 20 or newer**:
+`--human-body` is implemented by our wrapper, not a native Claude flag. Omit it for normal Claude. The wrapper adds the plugin and operating instructions, so your ordinary project-completion prompt works without mentioning pairing. It refuses `--bare`, `--safe-mode`, and extra plugin flags; existing settings or installed plugins can still interfere. This convenience launcher does **not** isolate Claude's filesystem: use the isolated E2E script for enforcement testing.
+
+Inside Claude, `/human-body` opens a native terminal panel: statistics, Pause/Resume, clock Reset/Stop, WPM, timed breaks in seconds, and a queued command field. Controls also work while Claude is working: `/human-body pause`, `/human-body resume`, `/human-body wpm 45`, `/human-body break 300`, `/human-body run git status`. Commands use the same typing queue and allowlist; explicit supervisor entry is their human confirmation. Reset starts the clock; do that **before writing your task prompt**. Stop freezes the competition clock and pauses physical playback; Reset restarts the clock, Resume restarts playback. Pause/break suspends physical input, not model reasoning or already-running builds. WPM changes apply to the next typing block; effective WPM is cumulative, not a rolling instantaneous measure. The panel does not call a model.
+
+The **controls** work over plain SSH in Claude's TUI. The **editing backend still requires** a VS Code window with this extension running on the server, under the same user, with the target project open (normally VS Code Remote–SSH). This is not yet a standalone, no-VS-Code implementation. No active editor means physical calls fail; there is no unrestricted-write fallback. Real terminal painting and real editing were smoke-tested using an isolated VS Code Web/code-server instance. Desktop Remote–SSH attachment remains untested. See [screenshots and verification notes](docs/UI-VERIFICATION.md).
+
+For the later subscription-backed test:
 
 ```sh
-git clone https://github.com/faiface/ai-pair.git
-cd ai-pair
-npm install
-npm run package
-code --install-extension ai-pair-*.vsix
+./scripts/real-claude-e2e.sh ./fixture-java
 ```
 
-## Connect your agent
+### Codex
 
-1. **Open a project folder in VS Code.** The extension installs the MCP server
-   your agent runs, at `~/.ai-pair/bin/pair-mcp`
-   (`%USERPROFILE%\.ai-pair\bin\pair-mcp.cmd` on Windows). It runs on
-   VS Code's own runtime, so it doesn't need Node.js.
-2. **Run *AI Pair: Set Up Agent*** from the command palette (VS Code also
-   offers this the first time the extension starts). Pick your agents; the
-   ones it finds installed are already checked. For each one, it adds a
-   server named `pair` to that agent's user-wide MCP configuration, leaving
-   everything else in the file as it was:
-
-   | Agent | Where |
-   |---|---|
-   | **Claude Code** (the CLI, the IDE extensions, the Claude desktop app's Code tab) | `claude mcp add --scope user`, or `~/.claude.json` without the `claude` command |
-   | **Codex** (the CLI, the IDE extension, the app) | `~/.codex/config.toml` (or in `$CODEX_HOME`) |
-   | **OpenCode** | `~/.config/opencode/opencode.json` (`.jsonc` if you have one), on Windows too |
-   | **Gemini CLI** | `~/.gemini/settings.json` |
-   | **Cursor** | `~/.cursor/mcp.json` |
-   | **Another agent** | copies an MCP server configuration to the clipboard: a stdio server named `pair` running the launcher |
-
-   **GitHub Copilot** in VS Code needs none of this: the extension gives it
-   the `pair` server itself.
-3. **Restart your agent** so it picks up the new server.
-
-## Settings
-
-| Setting | |
-|---|---|
-| `aiPair.speed` | Overall playback speed (the panel's speed menu offers 0.4× to 3.0×). |
-| `aiPair.agentName` | The name on the agent's cursor. |
-| `aiPair.timing` | Fine-tune any typing or pause duration, e.g. `{ "afterSelectMs": 900, "type": { "wordStartMs": 140 } }`. Every key is in [`timing.ts`](packages/core/src/timing.ts). |
-| `aiPair.confirmCommands` | Ask before each command the agent runs in the terminal (default on). Turned off, the agent's commands run without any prompt, not even its own. |
-
-## Troubleshooting
-
-- **The agent says `no_editor`.** Its working directory isn't inside a folder
-  that's open in VS Code. Open that folder in VS Code, or start the agent in
-  it.
-- **The agent doesn't have the pair tools.** Restart the agent after setting
-  it up. *AI Pair: Set Up Agent* marks the agents that are set up. With
-  Claude Code, `claude mcp list` should show `pair`. With Copilot, `pair`
-  should be in *MCP: List Servers*; start it there if it isn't running.
-- **After updating the extension,** reload the VS Code window and restart the
-  agent.
-
-## Development
-
-```
-packages/
-  protocol/   types shared by everything
-  core/       editor-agnostic sessions, playback, and the local WebSocket server
-  relay/      pair-mcp, the MCP server the agent runs
-  vscode/     the extension, which ships the relay
-```
+With the same session-local PATH and the project open in the editor:
 
 ```sh
-npm install
-npm test                  # unit and end-to-end tests
-npm run typecheck
-npm run build             # development build of the extension
-npm run test:integration  # plays a session inside a real, isolated VS Code (macOS)
-npm run package           # production build → ai-pair-<version>.vsix
+codex --human-body
+# Second SSH terminal, in the same project:
+human-body watch
 ```
 
-To run your working copy, open the repository in VS Code and press F5, or:
+Omit `--human-body` for ordinary Codex. This is our wrapper flag, not an OpenAI flag. It configures native hooks and the existing MCP relay, forces a read-only native shell sandbox with approvals disabled, explicitly approves only the five exposed broker tools, disables existing MCP servers for this session, and excludes supervisor control from Codex's tool list. No normal Codex settings are changed. Start from the desired directory; `-C`, profiles, config/sandbox overrides and resumed sessions are deliberately rejected in this mode. Hook trust is bypassed for this vetted launch; existing trusted hooks/plugins are still part of the supervised trust boundary.
+
+Codex controls are a **companion terminal**, not an injected native Codex pane: `human-body pause`, `human-body resume`, `human-body wpm 60`, `human-body break 300`, `human-body run git status`, `human-body reset`, `human-body stop`. Reset starts the clock, including prompt-writing time. `watch` shows elapsed/physical/queue time, target and cumulative effective WPM, characters, clipboard operations, command count and persistent blocked attempts. Type controls there without another model turn. Both integrations still require the VS Code backend; these controls do not make editing headless.
+
+Offline checks and a real-model benchmark are verified against Codex CLI 0.162.1:
 
 ```sh
-code --extensionDevelopmentPath="$PWD/packages/vscode" <a project folder>
+npm run test:codex-offline  # real config/MCP loader; never starts a turn
+sh scripts/real-codex-e2e.sh       # prints prerequisites; no usage
+sh scripts/real-codex-e2e.sh --run # later, subscription-backed supervised test
 ```
 
-### Releasing
+The offline check confirms accepted hooks/config and five exposed agent tools, without a model turn. A separate **real Codex** run completed the public Java Two Fer task through actual VS Code typing and sandboxed terminal tests: 3/3 passed, direct writer denied, tests unchanged, 83 characters typed, approximately 133 seconds overall. It does not prove full native process isolation, live subagent inheritance or Claude compatibility. See [the evidence, fixes, reproduction command and exact limitations](docs/CODEX-BENCHMARK.md).
 
-Add a section for the new version to
-[`packages/vscode/CHANGELOG.md`](packages/vscode/CHANGELOG.md), then, on an
-up-to-date `main`:
+## Uninstall
 
 ```sh
-npm run release -- patch   # or minor, major, or an exact version
+code --uninstall-extension human-body-experiment.human-body-mode
 ```
 
-It runs every test, bumps the version, builds the `.vsix` once and publishes
-that file to the Marketplace, then commits, tags and pushes the release and
-makes a GitHub release with the `.vsix` attached. It asks before publishing,
-since a version can't be published twice. It needs `vsce login michalstrba` and
-`gh auth login` done once.
+Stop launching Claude with `--plugin-dir .../plugin`. Remove the target repository's `.human-body-mode/` directory if its exported logs are no longer needed. No user-wide Claude or VS Code settings are changed by the build.
 
-## License
-
-[MIT](LICENSE)
+See [EXPERIMENT.md](EXPERIMENT.md), [LIMITATIONS.md](LIMITATIONS.md), and [docs/RESEARCH.md](docs/RESEARCH.md).

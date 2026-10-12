@@ -1,9 +1,9 @@
 {
-  "name": "ai-pair",
-  "displayName": "AI Pair",
-  "description": "Pair program with an AI agent: a second cursor that types at a human pace and narrates what it's doing.",
+  "name": "human-body-mode",
+  "displayName": "Human Body Mode",
+  "description": "Auditable human-speed physical input for AI coding experiments.",
   "version": "0.1.0",
-  "publisher": "michalstrba",
+  "publisher": "human-body-experiment",
   "private": true,
   "license": "MIT",
   "icon": "media/icon.png",
@@ -54,6 +54,10 @@
       ]
     },
     "commands": [
+      { "command": "humanBody.start", "title": "Start Experiment Clock", "category": "Human Body Mode" },
+      { "command": "humanBody.stop", "title": "Stop Experiment Clock", "category": "Human Body Mode" },
+      { "command": "humanBody.reset", "title": "Reset Experiment", "category": "Human Body Mode" },
+      { "command": "humanBody.export", "title": "Export Experiment Logs", "category": "Human Body Mode" },
       {
         "command": "aiPair.setUpAgent",
         "title": "Set Up Agent",
@@ -135,6 +139,11 @@
           "default": true,
           "scope": "application",
           "markdownDescription": "Ask in the Pair panel before running each command the agent plays in the terminal (`run`). Turning this off lets the agent run commands without Claude Code's own permission prompt."
+        },
+        "aiPair.seed": {
+          "type": "number",
+          "default": 20261012,
+          "description": "Seed for reproducible variable-speed typing."
         }
       }
     },
@@ -217,11 +226,11 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/faiface/ai-pair.git",
+    "url": "https://github.com/TrapLordJeevan/human-body-mode.git",
     "directory": "packages/vscode"
   },
-  "homepage": "https://github.com/faiface/ai-pair#readme",
+  "homepage": "https://github.com/TrapLordJeevan/human-body-mode#readme",
   "bugs": {
-    "url": "https://github.com/faiface/ai-pair/issues"
+    "url": "https://github.com/TrapLordJeevan/human-body-mode/issues"
   }
 }

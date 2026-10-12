@@ -1,0 +1,45 @@
+#!/usr/bin/env node
+const fs = require('node:fs')
+const path = require('node:path')
+const { spawn, spawnSync } = require('node:child_process')
+const args = process.argv.slice(2)
+const here = fs.realpathSync(__filename)
+const candidates = process.env.HUMAN_BODY_CODEX_BINARY ? [process.env.HUMAN_BODY_CODEX_BINARY] : (process.env.PATH || '').split(path.delimiter).map(dir => path.resolve(dir, 'codex'))
+const real = candidates.find(file => { try { fs.accessSync(file, fs.constants.X_OK); return fs.realpathSync(file) !== here } catch { return false } })
+if (!real) { console.error('Cannot find Codex. Set HUMAN_BODY_CODEX_BINARY to its absolute path.'); process.exit(1) }
+if (args.includes('--human-body')) {
+  if (args.some(arg => /^(-c|-p|-s|-a|-C|--cd|--config|--profile|--sandbox|--ask-for-approval|--enable|--disable|--remote|--add-dir|--dangerously|--yolo|--full-auto|--resume|--fork)(=|$)/.test(arg) || /^-[cpsaC].+/.test(arg) || arg.startsWith('--dangerously-') || ['resume', 'fork'].includes(arg))) {
+    console.error('Human Body Mode rejects configuration overrides, resumed sessions and sandbox bypasses. Start a fresh session.'); process.exit(1)
+  }
+  args.splice(args.indexOf('--human-body'), 1)
+  const root = path.resolve(__dirname, '..')
+  const quote = JSON.stringify
+  const shellQuote = s => "'" + s.replace(/'/g, "'\\''") + "'"
+  const guard = shellQuote(process.execPath) + ' ' + shellQuote(path.join(root, 'codex/guard.cjs'))
+  // Codex merges MCP tables rather than replacing them. Discover names without printing credentials.
+  const listed = spawnSync(real, ['mcp', 'list', '--json'], { encoding: 'utf8' })
+  let servers
+  try {
+    if (listed.status !== 0) throw new Error('MCP discovery failed')
+    servers = JSON.parse(listed.stdout)
+    if (!Array.isArray(servers) || servers.some(server => typeof server.name !== 'string' || !/^[A-Za-z0-9_-]+$/.test(server.name))) throw new Error('Invalid MCP inventory')
+  } catch { console.error('Cannot verify existing Codex MCP servers; refusing Human Body launch.'); process.exit(1) }
+  const enforced = []
+  for (const server of servers) enforced.push('-c', `mcp_servers.${server.name}.enabled=false`)
+  const instructions = 'Use the pair editor integration for file changes and terminal commands. Read and reason without limits. Start the pair MCP session with the absolute project directory before editing, and follow its guide. Native Bash is available for simple read-only inspection. Ask the user when clarification is needed. Operator controls are for the user only. Flush actions and end the session when the requested work is complete.'
+  enforced.push('--no-daemon', '--sandbox', 'read-only', '--ask-for-approval', 'never', '--dangerously-bypass-hook-trust',
+    '-c', 'features.hooks=true',
+    '-c', `developer_instructions=${quote(instructions)}`,
+    '-c', `hooks.PreToolUse=[{hooks=[{type="command",command=${quote(guard)},timeout=10}]}]`,
+    '-c', `mcp_servers={pair={enabled=true,command=${quote(process.execPath)},args=[${quote(path.join(root, 'plugin/server/pair-mcp.cjs'))}],enabled_tools=["start","step","listen","end","read"],default_tools_approval_mode="approve",tool_timeout_sec=3600}}`)
+  // Root-only flags must precede exec; help-only tests don't exercise this parser boundary.
+  args.unshift(...enforced)
+  console.error('Human Body Mode ON (Codex). VS Code backend required. Controls: human-body watch. Hooks are guardrails, not complete isolation; see LIMITATIONS.md.')
+}
+const child = spawn(real, args, { stdio: 'inherit' })
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill(signal))
+child.on('error', error => { console.error(error.message); process.exitCode = 1 })
+child.on('exit', (code, signal) => {
+  if (signal) { process.removeAllListeners(signal); process.kill(process.pid, signal) }
+  else process.exitCode = code ?? 1
+})

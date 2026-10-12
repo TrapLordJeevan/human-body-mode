@@ -13,6 +13,53 @@ afterEach(() => {
 // With the test config, a beat is 100 ms and `type` takes 100 ms per character.
 
 describe("timing", () => {
+  it("operator commands use the typing lane without requiring a second human confirmation", async () => {
+    const { controller } = setup({ "a.ts": "" }, { confirmCommands: true, commandTyping: true })
+    await controller.start()
+    await controller.control({ operation: "run", command: "git status" })
+    await until(controller.step([]))
+    expect(controller.metricsSnapshot().commandsExecuted).toBe(1)
+    expect(controller.metricsSnapshot().charactersTyped).toBe(10)
+    await controller.control({ operation: "run", command: "printf bypass > Main.java" })
+    await until(controller.step([]))
+    expect(controller.metricsSnapshot().commandsExecuted).toBe(1)
+  })
+
+  it("supervisor controls validate WPM, pause, timed breaks and metrics", async () => {
+    const { controller } = setup({ "a.ts": "" })
+    await controller.start()
+    await controller.control({ operation: "pause" })
+    expect(controller.isPaused).toBe(true)
+    await controller.control({ operation: "wpm", value: 45 })
+    expect(await controller.control({ operation: "status" })).toMatchObject({ configuredWpm: 45, paused: true })
+    await expect(controller.control({ operation: "wpm", value: NaN })).rejects.toThrow("WPM")
+    await expect(controller.control({ operation: "break", value: -1 })).rejects.toThrow("Break")
+    await controller.control({ operation: "resume" })
+    await controller.control({ operation: "break", value: 2 })
+    await advance(1999)
+    expect(controller.isPaused).toBe(true)
+    await advance(1)
+    expect(controller.isPaused).toBe(false)
+    await controller.control({ operation: "stop" })
+    expect(await controller.control({ operation: "status" })).toMatchObject({ running: false, paused: true })
+    await controller.control({ operation: "reset" })
+    expect(await controller.control({ operation: "status" })).toMatchObject({ running: true, charactersTyped: 0 })
+  })
+
+  it("serializes simultaneous subagent submissions through one typing lane", async () => {
+    const { editor, controller } = setup({ "a.ts": "" })
+    await controller.start()
+    await controller.step([{ move: { file: "a.ts", line: 1, to: "line_end" } }])
+    await until(controller.step([]))
+    const started = Date.now()
+    const first = controller.step([{ type: "abc▌" }])
+    const second = controller.step([{ type: "def▌" }])
+    await until(Promise.all([first, second]))
+    await until(controller.step([]))
+    expect(editor.text("a.ts")).toBe("abcdef")
+    expect(Date.now() - started).toBeGreaterThanOrEqual(600)
+  })
+
   it("returns the first step immediately and blocks the second until the first finishes", async () => {
     const { editor, controller } = setup({ "a.ts": "" })
     await controller.start()
@@ -81,6 +128,31 @@ describe("timing", () => {
 })
 
 describe("editing", () => {
+  it("pastes only text captured from an editor selection", async () => {
+    const { editor, controller } = setup({ "a.ts": "alpha beta" })
+    await controller.start()
+    await controller.read("a.ts")
+    await controller.step([
+      { select: { file: "a.ts", line: 1, text: "alpha" } },
+      { copy: true },
+      { move: { line: 1, to: "line_end" } },
+      { type: " ▌" },
+      { paste: true },
+    ])
+    await until(controller.step([]))
+    expect(editor.text("a.ts")).toBe("alpha beta alpha")
+    expect(controller.metricsSnapshot().clipboardOperations).toBe(2)
+    expect(controller.metricsSnapshot().charactersTyped).toBe(1)
+  })
+
+  it("rejects paste when no provenance clipboard exists", async () => {
+    const { controller } = setup({ "a.ts": "" })
+    await controller.start()
+    await controller.read("a.ts")
+    const report = await controller.step([{ move: { file: "a.ts", line: 1, to: "line_end" } }, { paste: true }])
+    expect(report.rejected?.error.message).toMatch(/provenance clipboard is empty/)
+  })
+
   it("types with one undo stop per action and instant indentation", async () => {
     const { editor, controller } = setup({ "a.ts": "" })
     await controller.start()

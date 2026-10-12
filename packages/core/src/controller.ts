@@ -11,6 +11,8 @@ import { followChange, rehearse, type Rehearsal } from "./rehearsal"
 import { fileLines } from "./text"
 import { Timeline } from "./timeline"
 import { defaultTiming, withOverrides, type Timing, type TimingOverrides } from "./timing"
+import { ExperimentMetrics, type MetricsSnapshot } from "./metrics"
+import { seededRandom } from "./typing"
 
 export type Config = {
   maxBlockMs: number
@@ -23,6 +25,7 @@ export type Config = {
   /** How long a `run` waits for its command by default, and at most. */
   runWaitMs: number
   maxRunWaitMs: number
+  commandTyping: boolean
 }
 
 export const defaultConfig: Config = {
@@ -33,12 +36,14 @@ export const defaultConfig: Config = {
   confirmCommands: true,
   runWaitMs: 120_000,
   maxRunWaitMs: 600_000,
+  commandTyping: true,
 }
 
 type Batch = {
   id: number
   actions: Action[]
   state: "queued" | "playing" | "done"
+  queuedAt: number
   result?: BatchResult
   /** What it leaves behind, played in memory when it was queued: where the next batch is rehearsed from. */
   after?: Rehearsal
@@ -97,6 +102,46 @@ type Call = {
 const cancelled = () => new ToolError("cancelled", "The call was cancelled.")
 
 export class Controller {
+  readonly metrics = new ExperimentMetrics()
+  private breakTimer?: ReturnType<typeof setTimeout>
+
+  async control(args: Record<string, unknown>): Promise<object> {
+    switch (args.operation) {
+      case "pause": this.pause("operator"); break
+      case "resume":
+        clearTimeout(this.breakTimer)
+        this.resume()
+        break
+      case "wpm": {
+        const wpm = Number(args.value)
+        if (!Number.isFinite(wpm) || wpm < 1 || wpm > 300) throw new Error("WPM must be between 1 and 300")
+        this.config = { ...this.config, timing: { ...this.config.timing, type: { ...this.config.timing.type, wpm } } }
+        break
+      }
+      case "break": {
+        const seconds = Number(args.value)
+        if (!Number.isFinite(seconds) || seconds < 1 || seconds > 86400) throw new Error("Break must be 1–86400 seconds")
+        clearTimeout(this.breakTimer)
+        this.pause("break")
+        this.breakTimer = setTimeout(() => this.resume("break"), seconds * 1000)
+        break
+      }
+      case "reset": this.resetMetrics(); break
+      case "stop": this.stopMetrics(); this.pause("operator"); break
+      case "run": {
+        if (typeof args.command !== "string") throw new Error("A command is required")
+        if (!this.isActive) throw new Error("Start the pair session before queuing a command")
+        // Supervisor submission is human confirmation; the command allowlist still applies.
+        this.session!.scene.allowedCommands.add(args.command)
+        const report = await this.step([{ run: args.command }])
+        this.restore(report)
+        break
+      }
+      case "status": break
+      default: throw new Error("Unknown control operation")
+    }
+    return { ...this.metricsSnapshot(), paused: this.isPaused, active: this.isActive, configuredWpm: this.config.timing.type.wpm }
+  }
   private session: Session | null = null
   private call: Call | null = null
   private chain: Promise<unknown> = Promise.resolve()
@@ -118,6 +163,7 @@ export class Controller {
       if (this.session && !this.session.ended) {
         throw new ToolError("session_active", "A pairing session is already active in this window.")
       }
+      this.metrics.start()
       const scene: Scene = {
         // In the editor's spelling, so paths inside it are reported relative to it.
         root: root && this.editor.resolvePath(root),
@@ -143,6 +189,7 @@ export class Controller {
           render: () => this.render(),
           confirm: (id, command) => this.confirm(s, id, command),
           lines,
+          metrics: this.metrics,
         }),
         queue: [],
         finished: [],
@@ -175,7 +222,7 @@ export class Controller {
       // An interruption arriving meanwhile discards it, like any batch planned without knowing about it.
       const current = rehearsal && !s.stale && !s.ended
       if (current && rehearsal.result.status === "failed") return this.reject(s, actions, rehearsal)
-      const batch: Batch = { id: this.nextBatchId++, actions, state: "queued", after: rehearsal?.after }
+      const batch: Batch = { id: this.nextBatchId++, actions, state: "queued", queuedAt: Date.now(), after: rehearsal?.after }
       if (current) {
         s.queue.push(batch)
         this.kick(s)
@@ -431,6 +478,22 @@ export class Controller {
     this.config = { ...this.config, timing: withOverrides(defaultTiming, overrides) }
   }
 
+  setSeed(seed: number): void {
+    this.config = { ...this.config, random: seededRandom(seed) }
+  }
+
+  resetMetrics(): void {
+    this.metrics.reset()
+  }
+
+  stopMetrics(): void {
+    this.metrics.stop()
+  }
+
+  metricsSnapshot(): MetricsSnapshot {
+    return this.metrics.snapshot()
+  }
+
   get isActive(): boolean {
     return this.activeSession() !== null
   }
@@ -619,6 +682,7 @@ export class Controller {
   }
 
   private close(s: Session): void {
+    clearTimeout(this.breakTimer)
     if (this.session === s) this.session = null
     s.timeline.interrupt()
     clearTimeout(s.navigatorTimer)
@@ -684,6 +748,7 @@ export class Controller {
     const head = s.queue[0]
     if (head?.state !== "queued") return
     head.state = "playing"
+    this.metrics.addQueueWait(head.queuedAt, Date.now())
     s.timeline.reset()
   }
 

@@ -11,6 +11,8 @@ import type { Change, EditorPort, Focus, PanelPort } from "./ports"
 import { fileLines, isLineStart, lineEnd, lineText, position } from "./text"
 import type { Pacing } from "./timeline"
 import { planTyping, readingTime } from "./typing"
+import type { ExperimentMetrics } from "./metrics"
+import { commandProblem } from "./commands"
 
 /** What playback reads and changes. */
 export type Scene = {
@@ -26,6 +28,8 @@ export type Scene = {
   pointFar: boolean
   /** Commands the programmer allowed to run without asking, until the session ends. */
   allowedCommands: Set<string>
+  /** Content captured from an editor selection; agents cannot supply it to paste. */
+  clipboard?: string
 }
 
 /** Where actions take effect: the programmer's editor, or a copy of it in memory. */
@@ -41,6 +45,8 @@ export type Stage = {
   confirm(id: number, command: string): Promise<boolean>
   /** The identities of the lines of the files played in. */
   lines: LineIds
+  /** Omitted during in-memory rehearsal. */
+  metrics?: ExperimentMetrics
   /**
    * Whether the line numbered `line` in `file` is the one the agent was last shown there, by its
    * identity. Given, a `move` only goes to a line the agent knows the number of.
@@ -253,7 +259,11 @@ export class Player {
   }
 
   private delay(ms: number): Promise<boolean> {
-    return this.stage.pacing.sleep(ms / this.stage.speed())
+    const started = Date.now()
+    return this.stage.pacing.sleep(ms / this.stage.speed()).then((completed) => {
+      if (this.stage.metrics) this.stage.metrics.physicalActionMs += Date.now() - started
+      return completed
+    })
   }
 
   private async perform(action: Action, playing: Playing): Promise<Outcome> {
@@ -357,6 +367,40 @@ export class Player {
       return this.type(before, after, fast, playing)
     }
 
+    if ("copy" in action || "cut" in action) {
+      if (!s.cursor || !s.selection) return fail("no_selection", "Nothing is selected; `select` first.")
+      const { file } = s.cursor
+      const { start, end } = s.selection
+      s.clipboard = (await editor.getText(file)).slice(start, end)
+      if (this.stage.metrics) this.stage.metrics.clipboardOperations++
+      if (!(await this.delay(100))) return { kind: "interrupted", consumed: true }
+      if ("copy" in action) return ok
+      playing.edited = true
+      this.touch(playing, file, start, end - start, 0)
+      s.cursor.offset = start
+      s.selection = null
+      await this.edit(file, { offset: start, deleteLength: end - start, text: "" }, { undoStopBefore: true, undoStopAfter: true })
+      this.follow()
+      return ok
+    }
+
+    if ("paste" in action) {
+      if (!s.cursor) return fail("no_cursor", "Your cursor isn't in a file yet; `move` first.")
+      if (s.clipboard === undefined) return fail("invalid_action", "The provenance clipboard is empty; `copy` or `cut` existing content first.")
+      const { file } = s.cursor
+      const start = s.selection?.start ?? s.cursor.offset
+      const deleteLength = s.selection ? s.selection.end - s.selection.start : 0
+      playing.edited = true
+      this.touch(playing, file, start, deleteLength, s.clipboard.length)
+      await this.edit(file, { offset: start, deleteLength, text: s.clipboard }, { undoStopBefore: true, undoStopAfter: true })
+      s.cursor.offset = start + s.clipboard.length
+      s.selection = null
+      if (this.stage.metrics) this.stage.metrics.clipboardOperations++
+      this.follow()
+      await this.delay(100)
+      return ok
+    }
+
     if ("delete" in action) {
       if (!s.cursor || !s.selection) return fail("no_selection", "Nothing is selected; `select` first.")
       const { file } = s.cursor
@@ -421,6 +465,14 @@ export class Player {
     const id = nextRunId++
     const signal = this.stage.pacing.signal
 
+    // The terminal receives the command at once so output capture remains reliable, but only
+    // after the same character timing a human would spend entering it.
+    if (config.commandTyping) {
+      const commandDelay = planTyping(command, config.timing.type, true, config.random).reduce((sum, chunk) => sum + chunk.delay, 0)
+      if (!(await this.delay(commandDelay))) return { kind: "interrupted" }
+      if (this.stage.metrics) this.stage.metrics.charactersTyped += Array.from(command).length
+    }
+
     if (config.confirmCommands && !s.allowedCommands.has(command)) {
       panel.post({ type: "run", id, command, phase: "confirm" })
       this.reading = true
@@ -434,6 +486,10 @@ export class Player {
         return fail("command_declined", "The programmer declined to run this command.")
       }
     }
+
+    const forbidden = commandProblem(command)
+    if (forbidden && this.stage.metrics) return fail("invalid_action", `Command blocked: ${forbidden}.`)
+    if (this.stage.metrics) this.stage.metrics.commandsExecuted++
 
     const requested = action.wait !== undefined ? action.wait * 1000 : config.runWaitMs
     const waitMs = Math.max(0, Math.min(config.maxRunWaitMs, requested))
@@ -519,6 +575,7 @@ export class Player {
         undoStopBefore: i === 0,
         undoStopAfter: i === chunks.length - 1,
       })
+      if (this.stage.metrics) this.stage.metrics.charactersTyped += Array.from(chunk.text).length
       typed += chunk.text
       this.follow()
     }

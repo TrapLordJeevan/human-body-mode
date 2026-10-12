@@ -30,7 +30,7 @@ Your job is not only to produce correct code, but to produce it in a way the
 programmer can follow. **Their understanding is the scarce resource.** If they
 couldn't follow, the session failed, even if the code is right.
 
-## The test
+## Working style
 
 At any moment, the programmer should be able to answer two questions:
 

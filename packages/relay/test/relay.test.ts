@@ -72,7 +72,7 @@ describe("relay", () => {
   it("lists the tools and the prompt, with short instructions", async () => {
     const client = await connect()
     const tools = await client.listTools()
-    expect(tools.tools.map((t) => t.name).sort()).toEqual(["end", "listen", "read", "start", "step"])
+    expect(tools.tools.map((t) => t.name).sort()).toEqual(["control", "end", "listen", "read", "start", "step"])
     expect(client.getInstructions()).toContain("`start`")
     const prompt = await client.getPrompt({ name: "start", arguments: { task: "add a todos API" } })
     expect(JSON.stringify(prompt.messages)).toContain("The task: add a todos API")
@@ -84,6 +84,8 @@ describe("relay", () => {
     expect(started.error).toBe(false)
     expect(started.text).toMatch(/started/)
     expect(started.content[1]!.text).toContain("THE GUIDE")
+    expect(started.content[1]!.text).toContain("not rg/ls/cat")
+    expect(started.content[1]!.text).not.toMatch(/benchmark|experiment|competition|probe|supervised|assessment/i)
 
     const first = await call(client, "step", { actions: [{ move: { file: "a.ts", line: 1, to: "line_end" } }, { type: "hi▌" }] })
     expect(first.text).toMatch(/Batch 1 is playing/)
@@ -170,8 +172,10 @@ describe("relay", () => {
     await new Promise((r) => setTimeout(r, 50))
     // The in-memory transport closing doesn't close the WebSocket by itself; the process exiting
     // does. Simulate that by disposing of every relay connection.
-    for (const c of bridge["server"]?.clients ?? []) c.close()
-    await new Promise((r) => setTimeout(r, 50))
+    await Promise.all([...(bridge["server"]?.clients ?? [])].map(c => new Promise<void>(resolve => {
+      c.once("close", () => resolve())
+      c.close()
+    })))
     expect(controller.isActive).toBe(false)
     expect(panel.events).toContainEqual({ type: "session", active: false, reason: "disconnected" })
   })

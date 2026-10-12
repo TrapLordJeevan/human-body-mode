@@ -1,0 +1,31 @@
+#!/usr/bin/env node
+// Session-local wrapper: put this directory first in PATH, not in global settings.
+const fs = require('node:fs')
+const path = require('node:path')
+const { spawn } = require('node:child_process')
+const args = process.argv.slice(2)
+const enabled = args.includes('--human-body')
+const here = fs.realpathSync(__filename)
+const candidates = process.env.HUMAN_BODY_CLAUDE_BINARY
+  ? [process.env.HUMAN_BODY_CLAUDE_BINARY]
+  : (process.env.PATH || '').split(path.delimiter).map(dir => path.resolve(dir, 'claude'))
+const real = candidates.find(file => {
+  try { fs.accessSync(file, fs.constants.X_OK); return fs.realpathSync(file) !== here } catch { return false }
+})
+if (!real) { console.error('Cannot find the real Claude CLI. Set HUMAN_BODY_CLAUDE_BINARY to its absolute path.'); process.exit(1) }
+if (enabled) {
+  if (args.some(arg => ['--bare', '--safe-mode', '--plugin-dir', '--plugin-url'].includes(arg) || arg.startsWith('--plugin-dir=') || arg.startsWith('--plugin-url='))) {
+    console.error('Human Body Mode cannot be combined with hook-disabling flags or additional plugins.'); process.exit(1)
+  }
+  args.splice(args.indexOf('--human-body'), 1)
+  args.push('--plugin-dir', path.resolve(__dirname, '../plugin'), '--append-system-prompt',
+    'Use the pair editor integration for file changes and terminal commands. Read and reason normally. Start the pair MCP session with the absolute project working directory before making changes and follow its guide. Use pair step for editor input; direct filesystem or shell writes are unavailable. Ask the user if you need clarification. Operator controls are for the user only.')
+  console.error('Human Body Mode ON. /human-body opens terminal controls. VS Code editor backend required. Launcher is not filesystem isolation; see LIMITATIONS.md.')
+}
+const child = spawn(real, args, { stdio: 'inherit' })
+for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill(signal))
+child.on('error', error => { console.error(error.message); process.exitCode = 1 })
+child.on('exit', (code, signal) => {
+  if (signal) { process.removeAllListeners(signal); process.kill(process.pid, signal) }
+  else process.exitCode = code ?? 1
+})

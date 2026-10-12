@@ -2,6 +2,7 @@
 // through shell integration. See `run` in PROTOCOL.md.
 
 import * as path from "node:path"
+import * as fs from "node:fs"
 import * as vscode from "vscode"
 import { samePath, terminalText, type CommandOutcome, type RunOptions } from "@ai-pair/core"
 
@@ -29,6 +30,7 @@ export class PairTerminals implements vscode.Disposable {
 
   async run(command: string, options: RunOptions): Promise<CommandOutcome> {
     const owned = this.acquire(options.cwd)
+    command = sandboxed(command, options.cwd)
     owned.busy = true
     const { terminal } = owned
     terminal.show(true)
@@ -103,6 +105,21 @@ export class PairTerminals implements vscode.Disposable {
   }
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`
+}
+
+/** Linux enforcement boundary: source is read-only; only build products and logs are writable. */
+export function sandboxed(command: string, cwd: string): string {
+  if (process.platform !== "linux" || !fs.existsSync("/usr/bin/bwrap")) {
+    throw new Error("Human Body Mode requires Linux bubblewrap; refusing to run an unsandboxed command.")
+  }
+  const writable = ["target", "build", ".gradle", ".human-body-mode"].map((name) => path.join(cwd, name))
+  for (const dir of writable) fs.mkdirSync(dir, { recursive: true })
+  const binds = writable.flatMap((dir) => ["--bind", shellQuote(dir), shellQuote(dir)]).join(" ")
+  return `/usr/bin/bwrap --ro-bind / / --dev-bind /dev /dev --proc /proc --tmpfs /tmp ${binds} --chdir ${shellQuote(cwd)} -- /bin/sh -lc ${shellQuote(command)}`
+}
+
 function shellIntegration(terminal: vscode.Terminal, signal: AbortSignal): Promise<vscode.TerminalShellIntegration | undefined> {
   if (terminal.shellIntegration) return Promise.resolve(terminal.shellIntegration)
   return new Promise((resolve) => {
@@ -153,4 +170,3 @@ class Tail {
     }
   }
 }
-
