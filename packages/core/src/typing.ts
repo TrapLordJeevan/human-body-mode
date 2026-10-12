@@ -55,7 +55,9 @@ export function planTyping(
     const ch = chars[i++]!
     const wordStart = previous !== undefined && !WORD.test(previous) && WORD.test(ch)
     if (cadence.mode === "variable" && (cadence.burstJitter ?? 0) > 0 && burstRemaining-- <= 0) {
-      burstRemaining = 3 + Math.floor(random() * 10)
+      const min = cadence.burstMinChars ?? 4
+      const max = cadence.burstMaxChars ?? 13
+      burstRemaining = min - 1 + Math.floor(random() * (max - min + 1))
       burstFactor = 1 + (random() * 2 - 1) * cadence.burstJitter!
     }
     const baseMs = 12_000 / cadence.wpm

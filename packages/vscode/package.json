@@ -2,7 +2,7 @@
   "name": "human-body-mode",
   "displayName": "Human Body Mode",
   "description": "Auditable human-speed physical input for AI coding experiments.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "human-body-experiment",
   "private": true,
   "license": "MIT",

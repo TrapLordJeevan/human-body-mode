@@ -19,7 +19,7 @@ export function activate(context: vscode.ExtensionContext): Api {
   const panel = new NarrationPanel((file) => editor.resolvePath(file), {
     current: () => editor.programmerSelection(),
     ref: () => editor.selectionRef(),
-  })
+  }, (profile) => context.workspaceState.update("humanBody.profile", profile))
   const controller = new Controller(editor, panel)
   editor.controller = controller
   editor.onSelection = (ref) => panel.showSelection(ref)
@@ -28,6 +28,11 @@ export function activate(context: vscode.ExtensionContext): Api {
   controller.setTiming(config().get("timing", {}))
   controller.setConfirmCommands(config().get("confirmCommands", true))
   controller.setSeed(config().get("seed", 20261012))
+  const savedProfile = context.workspaceState.get<ReturnType<Controller["profile"]>>("humanBody.profile")
+  if (savedProfile) {
+    try { controller.setTiming(savedProfile.timing); controller.setSeed(savedProfile.seed) }
+    catch (error) { void vscode.window.showWarningMessage(`Saved Human Body profile is invalid: ${String(error)}`) }
+  }
   registerExperiment(context, controller, root, (data) => panel.showMetrics(data))
 
   const bridge = new Bridge(controller, {

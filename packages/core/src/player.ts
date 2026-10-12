@@ -13,6 +13,7 @@ import type { Pacing } from "./timeline"
 import { planTyping, readingTime } from "./typing"
 import type { ExperimentMetrics } from "./metrics"
 import { commandProblem } from "./commands"
+import type { Cadence } from "./timing"
 
 /** What playback reads and changes. */
 export type Scene = {
@@ -139,6 +140,52 @@ export class Player {
   /** A `run` whose command is executing. */
   commandRunning = false
   private playing?: Playing
+  private finishAutomaticBreak?: (complete: boolean) => void
+
+  skipAutomaticBreak(): void { this.finishAutomaticBreak?.(true) }
+
+  private async waitAutomaticBreak(): Promise<boolean> {
+    const metrics = this.stage.metrics!
+    const duration = Math.max(0, metrics.automaticBreakEndsAt - Date.now())
+    const started = Date.now()
+    const complete = await new Promise<boolean>(resolve => {
+      const signal = this.stage.pacing.signal
+      const finish = (complete: boolean) => { clearTimeout(timer); signal.removeEventListener("abort", abort); this.finishAutomaticBreak = undefined; resolve(complete) }
+      const abort = () => finish(false)
+      const timer = setTimeout(() => finish(true), duration)
+      this.finishAutomaticBreak = finish
+      signal.addEventListener("abort", abort, { once: true })
+      if (signal.aborted) abort()
+    })
+    if (complete) metrics.automaticBreakEndsAt = 0
+    const clockStart = metrics.snapshot().startedAt
+    metrics.automaticBreakMs += Date.now() - Math.max(started, clockStart ? Date.parse(clockStart) : started)
+    return complete
+  }
+
+  private async typingPause(cadence: Cadence, wordStart: boolean): Promise<boolean> {
+    const metrics = this.stage.metrics
+    if (!metrics || cadence.mode === "strict") return true
+    // A persisted deadline prevents reconnects/restarts from silently skipping a pending break.
+    if (metrics.automaticBreakEndsAt > Date.now() && !(await this.waitAutomaticBreak())) return false
+    const random = this.stage.config().random
+    const range = (min: number, max: number) => min + random() * (max - min)
+    const interval = cadence.autoBreakIntervalMinSeconds ?? 0
+    if (interval > 0) {
+      if (metrics.nextAutomaticBreakMs === 0) metrics.nextAutomaticBreakMs = range(interval, cadence.autoBreakIntervalMaxSeconds ?? interval) * 1000
+      if (metrics.typingSinceBreakMs + 1e-6 >= metrics.nextAutomaticBreakMs) {
+        metrics.typingSinceBreakMs = metrics.nextAutomaticBreakMs = 0
+        const duration = range(cadence.autoBreakMinSeconds ?? 30, cadence.autoBreakMaxSeconds ?? 90) * 1000
+        metrics.automaticBreakEndsAt = Date.now() + duration
+        metrics.automaticBreaks++
+        if (!(await this.waitAutomaticBreak())) return false
+      }
+    }
+    if (wordStart && (cadence.shortPauseChance ?? 0) > 0 && random() < cadence.shortPauseChance!) {
+      if (!(await this.delay(range(cadence.shortPauseMinMs ?? 300, cadence.shortPauseMaxMs ?? 1200)))) return false
+    }
+    return true
+  }
 
   constructor(
     readonly scene: Scene,
@@ -468,9 +515,17 @@ export class Player {
     // The terminal receives the command at once so output capture remains reliable, but only
     // after the same character timing a human would spend entering it.
     if (config.commandTyping) {
-      const commandDelay = planTyping(command, config.timing.type, true, config.random).reduce((sum, chunk) => sum + chunk.delay, 0)
-      if (!(await this.delay(commandDelay))) return { kind: "interrupted" }
-      if (this.stage.metrics) this.stage.metrics.charactersTyped += Array.from(command).length
+      const chunks = planTyping(command, config.timing.type, true, this.stage.metrics ? config.random : () => 0.5)
+      let previous = " "
+      for (const chunk of chunks) {
+        const wordStart = /[a-z]/i.test(chunk.text[0] ?? "") && !/[a-z0-9_]/i.test(previous)
+        if (!(await this.typingPause(config.timing.type, wordStart)) || !(await this.delay(chunk.delay))) return { kind: "interrupted" }
+        if (this.stage.metrics) {
+          this.stage.metrics.charactersTyped += Array.from(chunk.text).length
+          this.stage.metrics.typingSinceBreakMs += chunk.delay
+        }
+        previous = chunk.text.at(-1) ?? previous
+      }
     }
 
     if (config.confirmCommands && !s.allowedCommands.has(command)) {
@@ -550,19 +605,34 @@ export class Player {
     const insertAt = s.selection ? s.selection.start : cursor.offset
     const { timing, random } = this.stage.config()
     const scale = fast ? timing.fastFactor : 1
-    const chunks = planTyping(before + after, timing.type, isLineStart(doc, insertAt), random, scale)
+    const chunks = planTyping(before + after, timing.type, isLineStart(doc, insertAt), this.stage.metrics ? random : () => 0.5, scale)
 
     if (chunks.length === 0 && s.selection) chunks.push({ text: "", delay: 0 })
     let typed = ""
+    let undoStarted = false
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i]!
-      if (!(await this.delay(chunk.delay))) {
+      const previous = typed.at(-1) ?? doc[insertAt - 1] ?? " "
+      const wordStart = /^[a-z]/i.test(chunk.text) && !/[a-z0-9_]/i.test(previous)
+      if (!(await this.typingPause(timing.type, wordStart)) || !(await this.delay(chunk.delay))) {
         if (typed === "") return { kind: "interrupted" }
         const rest =
           typed.length <= before.length
             ? before.slice(typed.length) + CURSOR_MARKER + after
             : CURSOR_MARKER + after.slice(typed.length - before.length)
         return { kind: "interrupted", rest: fast ? { type_fast: rest } : { type: rest } }
+      }
+      if (this.stage.metrics) this.stage.metrics.typingSinceBreakMs += chunk.delay
+      if (this.stage.metrics && timing.type.mode === "variable" && !s.selection && /^[a-z]$/i.test(chunk.text)) {
+        const falseStart = wordStart && (timing.type.falseStartChance ?? 0) > 0 && random() < timing.type.falseStartChance!
+        const typo = !falseStart && (timing.type.typoChance ?? 0) > 0 && random() < timing.type.typoChance!
+        if (falseStart || typo) {
+          if (!(await this.mistake(chunk.text, falseStart, timing.type, playing, !undoStarted))) {
+            const rest = typed.length <= before.length ? before.slice(typed.length) + CURSOR_MARKER + after : CURSOR_MARKER + after.slice(typed.length - before.length)
+            return { kind: "interrupted", rest: fast ? { type_fast: rest } : { type: rest } }
+          }
+          undoStarted = true
+        }
       }
       const insert = eol === "\n" ? chunk.text : chunk.text.replaceAll("\n", eol)
       const start = s.selection ? s.selection.start : cursor.offset
@@ -572,9 +642,10 @@ export class Player {
       s.selection = null
       this.touch(playing, cursor.file, start, deleteLength, insert.length)
       await this.edit(cursor.file, { offset: start, deleteLength, text: insert }, {
-        undoStopBefore: i === 0,
+        undoStopBefore: !undoStarted,
         undoStopAfter: i === chunks.length - 1,
       })
+      undoStarted = true
       if (this.stage.metrics) this.stage.metrics.charactersTyped += Array.from(chunk.text).length
       typed += chunk.text
       this.follow()
@@ -588,6 +659,46 @@ export class Player {
       await this.delay(timing.afterMoveNearMs * scale)
     }
     return ok
+  }
+
+  /** A transient keyboard-neighbour error; interrupted cleanup never deletes changed user text. */
+  private async mistake(letter: string, falseStart: boolean, cadence: Cadence, playing: Playing, undoStopBefore: boolean): Promise<boolean> {
+    const cursor = this.scene.cursor!
+    const alphabet = "qwertyuiopasdfghjklzxcvbnm"
+    const index = alphabet.indexOf(letter.toLowerCase())
+    let wrong = alphabet[(index + 1) % alphabet.length]!
+    if (letter === letter.toUpperCase()) wrong = wrong.toUpperCase()
+    if (falseStart) wrong += wrong.toLowerCase() + letter.toLowerCase()
+    const metrics = this.stage.metrics!
+    metrics.typingCorrections++
+    if (falseStart) metrics.falseStarts++
+    let pending = ""
+    let complete = true
+    for (const ch of wrong) {
+      if (pending && !(await this.delay(12000 / cadence.wpm))) { complete = false; break }
+      const offset = cursor.offset
+      cursor.offset++
+      this.touch(playing, cursor.file, offset, 0, 1)
+      await this.edit(cursor.file, { offset, deleteLength: 0, text: ch }, { undoStopBefore: undoStopBefore && !pending, undoStopAfter: false })
+      pending += ch
+      metrics.charactersTyped++
+      this.follow()
+    }
+    if (complete) complete = await this.delay(cadence.correctionPauseMs ?? 500)
+    while (pending) {
+      if (complete) complete = await this.delay(cadence.backspaceMs ?? 100)
+      const offset = cursor.offset - 1
+      const current = await this.stage.editor.getText(cursor.file)
+      // On interruption, preserve external edits instead of blindly backspacing.
+      if (current.slice(cursor.offset - pending.length, cursor.offset) !== pending) return false
+      cursor.offset = offset
+      this.touch(playing, cursor.file, offset, 1, 0)
+      await this.edit(cursor.file, { offset, deleteLength: 1, text: "" }, { undoStopBefore: false, undoStopAfter: false })
+      pending = pending.slice(0, -1)
+      this.follow()
+    }
+    if (!complete) return false
+    return this.delay(12000 / cadence.wpm)
   }
 
   /** Edits a file, which its lines' identities follow. */

@@ -21,7 +21,7 @@ type FromPanel =
   /** A command the intro offers, like Set Up Agent. */
   | { type: "command"; command: string }
   | { type: "runDecision"; id: number; run: boolean; remember?: boolean }
-  | { type: "control"; operation: string; value?: unknown; command?: string }
+  | { type: "control"; operation: string; value?: unknown; command?: string; profile?: unknown }
 
 const MAX_LOG = 400
 
@@ -39,6 +39,7 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
   constructor(
     private readonly resolvePath: (file: string) => string,
     private readonly selection: { current: () => SharedSelection | undefined; ref: () => Ref | undefined },
+    private readonly persistProfile?: (profile: ReturnType<Controller["profile"]>) => PromiseLike<void>,
   ) {}
 
   /** The programmer's selection changed. Not logged: only the current one matters. */
@@ -92,10 +93,11 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
       case "control": {
         if (m.operation === "export" || m.operation === "reset") {
           void vscode.commands.executeCommand(`humanBody.${m.operation}`)
-        } else if (["pause", "resume", "stop", "wpm", "mode", "break", "run"].includes(m.operation)) {
-          void c?.control(m).then(() => {
+        } else if (["pause", "resume", "stop", "wpm", "mode", "break", "run", "profile"].includes(m.operation)) {
+          void c?.control(m).then(async () => {
+            if (["profile", "wpm", "mode"].includes(m.operation)) await this.persistProfile?.(c.profile())
             this.showMetrics({ ...this.metrics, ...c.controlStatus() })
-            void this.view?.webview.postMessage({ type: "controlResult", error: "" })
+            void this.view?.webview.postMessage({ type: "controlResult", error: "", profileApplied: m.operation === "profile" })
           }).catch((error: unknown) => {
             void this.view?.webview.postMessage({ type: "controlResult", error: String(error) })
           })

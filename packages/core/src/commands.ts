@@ -16,7 +16,7 @@ export function commandProblem(command: string): string | undefined {
   if (["gradle", "gradlew"].includes(executable) && args.some((a) => ["test", "build", "check", "classes", "clean"].includes(a))) {
     return undefined
   }
-  if (executable === "javac") {
+  if (executable === "javac" || (executable === "java" && args[0] === "-m" && args[1] === "jdk.compiler/com.sun.tools.javac.Main")) {
     const output = args[args.indexOf("-d") + 1]
     if (args.includes("-d") && output && /(^|\/)(target|build)(\/|$)/.test(output)) return undefined
   }

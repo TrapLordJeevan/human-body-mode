@@ -1,5 +1,15 @@
 # Live UI verification — 2026-10-12
 
+## Human-profile update — extension 0.1.2
+
+Installed the actual VSIX in another isolated code-server 4.109.5 profile with a disposable Java fixture copy. The live webview's expandable sections expose all 31 numeric timing fields plus WPM, mode and seed. Keyboard navigation opened the sections and changed sentence weight to 600ms, short-pause chance to 10%, automatic intervals to 20–40 scheduled-typing seconds, break duration to 2–5 seconds, typo chance to 1% and false-start chance to 2%. Apply reached the controller and workspace-state persistence; reloading the editor retained those exact values. Export produced JSON/CSV with the nested profile. [Actual advanced sidebar screenshot](HUMAN-PROFILE.png).
+
+The zero-token `scripts/human-profile-smoke.mjs` used real MCP, editor edits, saves and sandboxed Java compilation. Its stress profile used 120 WPM, 100% eligible-letter typos, 50% word-start false starts, 25ms correction recognition, 10ms backspacing, 100% short pauses of 20ms, one scheduled-typing-second automatic intervals and 100ms breaks. The source phase produced 32 corrections, two false starts, six automatic breaks (602ms measured), 102 typed characters, elapsed 14.168s and physical 12.504s. Final saved source matched intended Java exactly; the compiler produced the uniquely named `.class` file. The script restores the previous runtime profile and makes no model requests. Terminal command typing is delay-only; editor mistakes are actually visible edit/backspace operations.
+
+The repeat with final clock/build accounting passed: elapsed 27.462s, physical 23.949s, 213 typed characters, one compiler command, 32 corrections, two false starts and 16 automatic breaks totalling 1.602s (including command-entry breaks). These are intentionally extreme stress parameters, not recommended defaults.
+
+Automated checks: 170 tests, six native offline Claude Mod tests, typecheck, filesystem isolation and VSIX packaging. A fresh real-time strict 300-character test passed at 60.14s. Tests cover numeric/probability/range validation, atomic profile updates, persistence callbacks, text preservation, undo-stop grouping, interruption cleanup, per-word behaviour across typing actions, short-pause cost, strict-mode disabling, cross-submission automatic budgets, skip/countdown/deadline restoration and CSV escaping. This does not verify OS crashes during visible typos, empirical human realism, a full Claude coding task or desktop WSL/Remote–SSH.
+
 ## Dashboard update — extension 0.1.1
 
 Installed the packaged 0.1.1 VSIX in a dedicated local code-server 4.109.5 profile/extensions directory with a disposable Java fixture copy. The keyboard activity-bar icon and status-bar shortcut both open the actual webview. Browser automation clicked the real controls; no HTML recreation or Claude/Codex model was involved. [Actual dashboard screenshot](DASHBOARD.png).

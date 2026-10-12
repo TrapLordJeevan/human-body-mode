@@ -10,7 +10,7 @@ import type { AgentState, Change, CursorView, EditorPort, PanelPort, Ref, Shared
 import { followChange, rehearse, type Rehearsal } from "./rehearsal"
 import { fileLines } from "./text"
 import { Timeline } from "./timeline"
-import { defaultTiming, withOverrides, type Timing, type TimingOverrides } from "./timing"
+import { defaultTiming, validatedTiming, type Timing, type TimingOverrides } from "./timing"
 import { ExperimentMetrics, type MetricsSnapshot } from "./metrics"
 import { seededRandom } from "./typing"
 import { commandProblem } from "./commands"
@@ -106,14 +106,28 @@ export class Controller {
   readonly metrics = new ExperimentMetrics()
   private breakTimer?: ReturnType<typeof setTimeout>
   private breakUntil = 0
+  private seed = 20261012
 
   async control(args: Record<string, unknown>): Promise<object> {
     switch (args.operation) {
+      case "profile": {
+        const profile = args.profile as { timing?: unknown; seed?: unknown } | undefined
+        if (!profile || typeof profile !== "object" || Array.isArray(profile) || Object.keys(profile).some(key => !["timing", "seed"].includes(key))) throw new Error("Invalid profile")
+        const timing = validatedTiming(profile.timing ?? {})
+        const seed = profile.seed ?? this.seed
+        if (typeof seed !== "number" || !Number.isInteger(seed) || seed < 0 || seed > 4294967295) throw new Error("Seed must be a 32-bit unsigned integer")
+        this.config = { ...this.config, timing }
+        if (seed !== this.seed) this.setSeed(seed)
+        this.metrics.typingSinceBreakMs = this.metrics.nextAutomaticBreakMs = 0
+        break
+      }
       case "pause": this.pause("operator"); break
       case "resume":
         clearTimeout(this.breakTimer)
         this.breakUntil = 0
         this.resume()
+        this.session?.player.skipAutomaticBreak()
+        this.metrics.automaticBreakEndsAt = 0
         break
       case "wpm": {
         const wpm = Number(args.value)
@@ -156,8 +170,11 @@ export class Controller {
   }
 
   controlStatus(): object {
-    return { ...this.metricsSnapshot(), paused: this.isPaused, active: this.isActive, configuredWpm: this.config.timing.type.wpm, configuredMode: this.config.timing.type.mode, breakRemainingMs: Math.max(0, this.breakUntil - Date.now()) }
+    const automaticBreakRemainingMs = Math.max(0, this.metrics.automaticBreakEndsAt - Date.now())
+    return { ...this.metricsSnapshot(), paused: this.isPaused || automaticBreakRemainingMs > 0, active: this.isActive, configuredWpm: this.config.timing.type.wpm, configuredMode: this.config.timing.type.mode, breakRemainingMs: Math.max(0, this.breakUntil - Date.now()), automaticBreakRemainingMs, profile: this.profile() }
   }
+
+  profile(): { timing: Timing; seed: number } { return { timing: this.config.timing, seed: this.seed } }
   private session: Session | null = null
   private call: Call | null = null
   private chain: Promise<unknown> = Promise.resolve()
@@ -491,14 +508,17 @@ export class Controller {
 
   /** Calibration: overrides on top of the default timing. */
   setTiming(overrides: TimingOverrides): void {
-    this.config = { ...this.config, timing: withOverrides(defaultTiming, overrides) }
+    this.config = { ...this.config, timing: validatedTiming(overrides) }
   }
 
   setSeed(seed: number): void {
+    if (!Number.isInteger(seed) || seed < 0 || seed > 4294967295) throw new Error("Invalid seed")
+    this.seed = seed
     this.config = { ...this.config, random: seededRandom(seed) }
   }
 
   resetMetrics(): void {
+    this.session?.player.skipAutomaticBreak()
     this.metrics.reset()
   }
 

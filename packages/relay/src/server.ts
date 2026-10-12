@@ -75,9 +75,10 @@ export function createServer(link: EditorLink, guide: string, cwd: string): McpS
   server.registerTool("control", {
     description: "Supervisor controls. Human Body Mode blocks model access to this tool; use the TUI controls.",
     inputSchema: {
-      operation: z.enum(["status", "pause", "resume", "wpm", "break", "reset", "stop", "run"]),
+      operation: z.enum(["status", "pause", "resume", "wpm", "break", "reset", "stop", "run", "profile"]),
       value: z.number().optional(),
       command: z.string().optional(),
+      profile: z.object({ timing: z.record(z.string(), z.unknown()), seed: z.number().optional() }).optional(),
     },
   }, async (args, extra) => {
     try {

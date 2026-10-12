@@ -4,6 +4,7 @@
 // first.
 
 import { randomBytes } from "node:crypto"
+import { defaultTiming, PROFILE_FIELDS } from "@ai-pair/core"
 
 const svg = (paths: string, cls = "") =>
   `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`
@@ -20,6 +21,12 @@ const ICONS = {
 
 export function panelHtml(cspSource: string): string {
   const nonce = randomBytes(16).toString("base64")
+  const fields = (keys: readonly string[]) => PROFILE_FIELDS.filter(([, key]) => keys.includes(key)).map(([group, key, label, min, max, scale]) => {
+    const defaults = group === "navigation" ? defaultTiming : defaultTiming[group]
+    const value = (defaults as unknown as Record<string, number>)[key]! * scale
+    return `<label>${label}<input type="number" id="profile-${key}" data-profile-group="${group}" data-profile-key="${key}" data-profile-scale="${scale}" min="${min * scale}" max="${max * scale}" step="${["burstMinChars", "burstMaxChars", "nearLines"].includes(key) ? 1 : "any"}" value="${value}" required></label>`
+  }).join("")
+  const section = (label: string, keys: readonly string[], note: string) => `<details><summary>${label}</summary><small>${note}</small>${fields(keys)}</details>`
   return /* html */ `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -65,7 +72,7 @@ export function panelHtml(cspSource: string): string {
     font-size: var(--vscode-font-size, 13px);
     color: var(--fg);
   }
-  #app { display: flex; flex-direction: column; height: 100%; }
+  #app { display: flex; flex-direction: column; min-height: 100%; }
   #dashboard { padding: 12px 14px; border-bottom: 1px solid var(--border); flex: none; }
   #dashboard h2 { font-size: 13px; margin: 0 0 8px; }
   #metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-variant-numeric: tabular-nums; margin: 8px 0; }
@@ -77,6 +84,13 @@ export function panelHtml(cspSource: string): string {
   #operator-command { flex: 1; width: 100%; }
   #control-error { color: var(--fail); overflow-wrap: anywhere; }
   #operator-state, #dashboard small { font-size: 11px; color: var(--muted); }
+  #cadence-form { display: block !important; }
+  #cadence-form > label { margin: 8px 0; }
+  #cadence-form details { margin: 10px 0; width: 100%; }
+  #cadence-form summary { cursor: pointer; padding: 6px 0; font-size: 12px; font-weight: 500; }
+  #cadence-form details label { display: grid; grid-template-columns: minmax(0, 1fr) 70px; margin: 8px 0; }
+  #cadence-form details input { width: 70px; }
+  #profile-seed { width: 120px; }
 
   button {
     font: inherit; font-size: 12px; height: 24px; min-width: 24px; box-sizing: border-box; padding: 0 5px;
@@ -240,6 +254,8 @@ export function panelHtml(cspSource: string): string {
       <div><span>Clipboard operations</span><strong id="metric-clipboard">0</strong></div>
       <div><span>Commands executed</span><strong id="metric-commands">0</strong></div>
       <div><span>Blocked attempts</span><strong id="metric-blocked">0</strong></div>
+      <div><span>Corrections / false starts</span><strong id="metric-corrections">0 / 0</strong></div>
+      <div><span>Automatic breaks / time</span><strong id="metric-breaks">0 / 0s</strong></div>
     </div>
     <div class="row">
       <button class="soft" data-control="pause">Pause input</button><button class="soft" data-control="resume">Resume</button>
@@ -249,9 +265,15 @@ export function panelHtml(cspSource: string): string {
     <form id="cadence-form" class="row">
       <label>WPM <input id="target-wpm" type="number" min="1" max="300" value="60" required></label>
       <label>Cadence <select id="cadence-mode"><option value="variable">Human cadence</option><option value="strict">Strict constant</option></select></label>
-      <button class="primary" type="submit">Apply</button>
+      <label>Seed <input id="profile-seed" type="number" min="0" max="4294967295" step="1" value="20261012" required></label>
+      ${section("Typing rhythm", ["jitter", "burstJitter", "burstMinChars", "burstMaxChars", "wordStartMs", "punctuationMs", "openBracketMs", "newlineMs", "sentenceMs"], "Pause weights are normalized into target WPM. Strict mode ignores human rhythm.")}
+      ${section("Short pauses", ["shortPauseChance", "shortPauseMinMs", "shortPauseMaxMs"], "Chance per word; 0% disables. These pauses add elapsed time outside the WPM budget.")}
+      ${section("Automatic breaks", ["autoBreakIntervalMinSeconds", "autoBreakIntervalMaxSeconds", "autoBreakMinSeconds", "autoBreakMaxSeconds"], "Intervals count scheduled typing time across all agents, not builds or idle reasoning. Set both intervals to 0 to disable. Resume skips the current automatic break.")}
+      ${section("Mistakes and corrections", ["typoChance", "falseStartChance", "correctionPauseMs", "backspaceMs"], "Optional editor-only mistakes are visibly corrected. 0% disables. False starts are short wrong prefixes; chances apply only to ASCII letters, not indentation or punctuation. Correction costs add elapsed time. Strict mode disables these behaviours.")}
+      ${section("Navigation and narration", PROFILE_FIELDS.filter(([group]) => group !== "type").map(([, key]) => key), "Physical navigation and narration delays; these do not limit reasoning or repository reading.")}
+      <button class="primary" type="submit">Apply profile</button>
     </form>
-    <small>Changes apply to the next typing block. No artificial mistakes.</small>
+    <small>Profile changes apply to the next typing block and are saved for this workspace. Strict mode disables automatic pauses, breaks and mistakes.</small>
     <form id="break-form" class="row">
       <label>Break seconds <input id="break-seconds" type="number" min="1" max="86400" value="300" required></label>
       <button class="soft" type="submit">Take break</button>
@@ -564,8 +586,9 @@ export function panelHtml(cspSource: string): string {
 
   window.addEventListener("message", (m) => handle(m.data));
   let cadenceDirty = false;
+  let currentProfile = ${JSON.stringify({ timing: defaultTiming, seed: 20261012 })};
   window.addEventListener("message", ({ data: e }) => {
-    if (e.type === "controlResult") { $("control-error").textContent = e.error; return; }
+    if (e.type === "controlResult") { $("control-error").textContent = e.error; if (e.profileApplied && !e.error) cadenceDirty = false; return; }
     if (e.type !== "metrics") return;
     const m = e.data;
     const seconds = (ms) => Math.round((ms || 0) / 1000) + "s";
@@ -577,14 +600,33 @@ export function panelHtml(cspSource: string): string {
     $("metric-clipboard").textContent = m.clipboardOperations || 0;
     $("metric-commands").textContent = m.commandsExecuted || 0;
     $("metric-blocked").textContent = m.blockedBypassAttempts || 0;
-    $("operator-state").textContent = (m.paused ? "Input paused" : m.active ? "Agent connected" : "Editor ready · waiting for agent") + (m.breakRemainingMs > 0 ? " · break " + seconds(m.breakRemainingMs) : "") + (m.running ? " · clock running" : " · clock stopped");
+    $("metric-corrections").textContent = (m.typingCorrections || 0) + " / " + (m.falseStarts || 0);
+    $("metric-breaks").textContent = (m.automaticBreaks || 0) + " / " + seconds(m.automaticBreakMs);
+    $("operator-state").textContent = (m.paused ? "Input paused" : m.active ? "Agent connected" : "Editor ready · waiting for agent") + (m.automaticBreakRemainingMs > 0 ? " · automatic break " + seconds(m.automaticBreakRemainingMs) : m.breakRemainingMs > 0 ? " · break " + seconds(m.breakRemainingMs) : "") + (m.running ? " · clock running" : " · clock stopped");
+    if (m.profile) currentProfile = m.profile;
+    if (!cadenceDirty) {
+      for (const field of document.querySelectorAll("[data-profile-key]")) {
+        if (document.activeElement === field) continue;
+        const source = field.dataset.profileGroup === "navigation" ? currentProfile.timing : currentProfile.timing[field.dataset.profileGroup];
+        field.value = source[field.dataset.profileKey] * Number(field.dataset.profileScale);
+      }
+      if (document.activeElement !== $("profile-seed")) $("profile-seed").value = currentProfile.seed;
+    }
     if (document.activeElement !== $("target-wpm") && !cadenceDirty) $("target-wpm").value = m.configuredWpm || 60;
     if (document.activeElement !== $("cadence-mode") && !cadenceDirty) $("cadence-mode").value = m.configuredMode || "variable";
   });
   const control = (operation, args = {}) => vscode.postMessage({ type: "control", operation, ...args });
   $("cadence-form").oninput = () => { cadenceDirty = true; };
   for (const button of document.querySelectorAll("[data-control]")) button.onclick = () => control(button.dataset.control);
-  $("cadence-form").onsubmit = (e) => { e.preventDefault(); control("wpm", { value: Number($("target-wpm").value) }); control("mode", { value: $("cadence-mode").value }); cadenceDirty = false; };
+  $("cadence-form").onsubmit = (e) => {
+    e.preventDefault();
+    const timing = { type: { wpm: Number($("target-wpm").value), mode: $("cadence-mode").value }, reading: {} };
+    for (const field of document.querySelectorAll("[data-profile-key]")) {
+      const target = field.dataset.profileGroup === "navigation" ? timing : timing[field.dataset.profileGroup];
+      target[field.dataset.profileKey] = Number(field.value) / Number(field.dataset.profileScale);
+    }
+    control("profile", { profile: { timing, seed: Number($("profile-seed").value) } });
+  };
   $("break-form").onsubmit = (e) => { e.preventDefault(); control("break", { value: Number($("break-seconds").value) }); };
   $("command-form").onsubmit = (e) => { e.preventDefault(); control("run", { command: $("operator-command").value }); };
 
@@ -703,7 +745,7 @@ export function panelHtml(cspSource: string): string {
   // button, which after a click could be End; Enter still does.
   document.addEventListener("keydown", (e) => {
     if (e.key !== " " || e.ctrlKey || e.metaKey || e.altKey || !active) return;
-    if (["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(e.target.tagName)) return;
+    if (["INPUT", "SELECT", "TEXTAREA", "BUTTON", "SUMMARY"].includes(e.target.tagName)) return;
     e.preventDefault();
     if (e.repeat || turn === "user") return;
     vscode.postMessage({ type: paused ? "resume" : "pause" });

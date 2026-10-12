@@ -5,6 +5,12 @@ import type { Controller, MetricsSnapshot } from "@ai-pair/core"
 
 type Exported = MetricsSnapshot & { blockedBypassAttempts: number }
 
+export function metricsCsv(data: object): string {
+  const entries = Object.entries(data)
+  const cell = (value: unknown) => `"${String(typeof value === "object" ? JSON.stringify(value) : value ?? "").replaceAll('"', '""')}"`
+  return `${entries.map(([key]) => cell(key)).join(",")}\n${entries.map(([, value]) => cell(value)).join(",")}\n`
+}
+
 export function registerExperiment(context: vscode.ExtensionContext, controller: Controller, root: string, publish: (data: object) => void): void {
   const dir = path.join(root, ".human-body-mode")
   const stateFile = path.join(dir, "metrics.json")
@@ -59,8 +65,7 @@ export function registerExperiment(context: vscode.ExtensionContext, controller:
       const m = data()
       fs.mkdirSync(dir, { recursive: true })
       fs.writeFileSync(path.join(dir, "experiment.json"), JSON.stringify(m, null, 2))
-      const keys = Object.keys(m)
-      fs.writeFileSync(path.join(dir, "experiment.csv"), `${keys.join(",")}\n${keys.map((key) => JSON.stringify(m[key as keyof Exported] ?? "")).join(",")}\n`)
+      fs.writeFileSync(path.join(dir, "experiment.csv"), metricsCsv(m))
       void vscode.window.showInformationMessage(`Human Body Mode logs exported to ${dir}`)
     }),
   )

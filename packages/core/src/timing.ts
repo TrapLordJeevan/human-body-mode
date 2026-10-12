@@ -23,6 +23,19 @@ export type Cadence = {
   burstJitter?: number
   /** Pause after sentence punctuation; normalized into the configured average. */
   sentenceMs?: number
+  burstMinChars?: number
+  burstMaxChars?: number
+  shortPauseChance?: number
+  shortPauseMinMs?: number
+  shortPauseMaxMs?: number
+  autoBreakIntervalMinSeconds?: number
+  autoBreakIntervalMaxSeconds?: number
+  autoBreakMinSeconds?: number
+  autoBreakMaxSeconds?: number
+  typoChance?: number
+  falseStartChance?: number
+  correctionPauseMs?: number
+  backspaceMs?: number
 }
 
 export type Reading = { msPerWord: number; minMs: number; maxMs: number }
@@ -62,6 +75,19 @@ export const defaultTiming: Timing = {
     newlineMs: 100,
     burstJitter: 0.25,
     sentenceMs: 300,
+    burstMinChars: 4,
+    burstMaxChars: 13,
+    shortPauseChance: 0,
+    shortPauseMinMs: 300,
+    shortPauseMaxMs: 1200,
+    autoBreakIntervalMinSeconds: 0,
+    autoBreakIntervalMaxSeconds: 0,
+    autoBreakMinSeconds: 30,
+    autoBreakMaxSeconds: 90,
+    typoChance: 0,
+    falseStartChance: 0,
+    correctionPauseMs: 500,
+    backspaceMs: 100,
   },
   fastFactor: 1,
   reading: { msPerWord: 270, minMs: 1500, maxMs: 9000 },
@@ -89,4 +115,70 @@ export function withOverrides(base: Timing, overrides: TimingOverrides): Timing 
     // Authored text has no fast path in Human Body Mode, including through settings.
     fastFactor: 1,
   }
+}
+
+// The operator form and validation use the same numeric ranges; percentages are displayed as 0–100.
+export const PROFILE_FIELDS = [
+  ["type", "jitter", "Character variation (%)", 0, 0.8, 100],
+  ["type", "burstJitter", "Burst variation (%)", 0, 0.8, 100],
+  ["type", "burstMinChars", "Burst length min (characters)", 1, 100, 1],
+  ["type", "burstMaxChars", "Burst length max (characters)", 1, 100, 1],
+  ["type", "wordStartMs", "Word-start pause weight (ms)", 0, 10000, 1],
+  ["type", "punctuationMs", "Punctuation pause weight (ms)", 0, 10000, 1],
+  ["type", "openBracketMs", "Bracket pause weight (ms)", 0, 10000, 1],
+  ["type", "newlineMs", "Newline pause weight (ms)", 0, 10000, 1],
+  ["type", "sentenceMs", "Sentence pause weight (ms)", 0, 10000, 1],
+  ["type", "shortPauseChance", "Short-pause chance per word (%)", 0, 1, 100],
+  ["type", "shortPauseMinMs", "Short pause min (ms)", 0, 60000, 1],
+  ["type", "shortPauseMaxMs", "Short pause max (ms)", 0, 60000, 1],
+  ["type", "autoBreakIntervalMinSeconds", "Break interval min (active input seconds; 0 = off)", 0, 86400, 1],
+  ["type", "autoBreakIntervalMaxSeconds", "Break interval max (active input seconds)", 0, 86400, 1],
+  ["type", "autoBreakMinSeconds", "Automatic break duration min (seconds)", 0, 3600, 1],
+  ["type", "autoBreakMaxSeconds", "Automatic break duration max (seconds)", 0, 3600, 1],
+  ["type", "typoChance", "Typo chance per eligible letter (%)", 0, 1, 100],
+  ["type", "falseStartChance", "False-start chance per word (%)", 0, 1, 100],
+  ["type", "correctionPauseMs", "Notice mistake after (ms)", 0, 10000, 1],
+  ["type", "backspaceMs", "Backspace interval (ms)", 0, 1000, 1],
+  ["navigation", "beforeMoveMs", "Before moving (ms)", 0, 10000, 1],
+  ["navigation", "afterMoveNearMs", "After nearby move (ms)", 0, 10000, 1],
+  ["navigation", "afterMoveFarMs", "After file switch / far move (ms)", 0, 10000, 1],
+  ["navigation", "nearLines", "Nearby move threshold (lines)", 0, 1000, 1],
+  ["navigation", "beforeSelectMs", "Before selection (ms)", 0, 10000, 1],
+  ["navigation", "afterSelectMs", "After selection (ms)", 0, 10000, 1],
+  ["navigation", "afterDeleteMs", "After deletion (ms)", 0, 10000, 1],
+  ["navigation", "afterPointMs", "After highlighting (ms)", 0, 10000, 1],
+  ["reading", "msPerWord", "Narration reading (ms / word)", 0, 10000, 1],
+  ["reading", "minMs", "Narration reading min (ms)", 0, 60000, 1],
+  ["reading", "maxMs", "Narration reading max (ms)", 0, 60000, 1],
+] as const
+
+/** Validates the entire profile before any setting is applied. */
+export function validatedTiming(input: unknown): Timing {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Timing must be an object")
+  const overrides = input as Record<string, unknown>
+  const limits = new Map<string, readonly [number, number]>(PROFILE_FIELDS.map(([group, key, , min, max]) => [`${group}.${key}`, [min, max]]))
+  limits.set("type.wpm", [1, 300])
+  limits.set("type.charMs", [0, 10000]) // Legacy field, retained for settings compatibility.
+  for (const [key, value] of Object.entries(overrides)) {
+    const group = key === "type" || key === "reading" ? key : "navigation"
+    const entries: [string, unknown][] | null = group === "navigation" ? [[key, value]] : value && typeof value === "object" && !Array.isArray(value) ? Object.entries(value) : null
+    if (!entries) throw new Error(`${key} must be an object`)
+    for (const [field, number] of entries) {
+      if (group === "type" && field === "mode") {
+        if (number !== "strict" && number !== "variable") throw new Error("Mode must be strict or variable")
+        continue
+      }
+      if (group === "navigation" && field === "fastFactor" && number === 1) continue
+      const range = limits.get(`${group}.${field}`)
+      if (!range || typeof number !== "number" || !Number.isFinite(number) || number < range[0] || number > range[1]) throw new Error(`Invalid timing: ${group}.${field}`)
+      if (["burstMinChars", "burstMaxChars", "nearLines"].includes(field) && !Number.isInteger(number)) throw new Error(`${field} must be an integer`)
+    }
+  }
+  const timing = withOverrides(defaultTiming, overrides as TimingOverrides)
+  const c = timing.type
+  for (const [min, max] of [[c.burstMinChars, c.burstMaxChars], [c.shortPauseMinMs, c.shortPauseMaxMs], [c.autoBreakIntervalMinSeconds, c.autoBreakIntervalMaxSeconds], [c.autoBreakMinSeconds, c.autoBreakMaxSeconds], [timing.reading.minMs, timing.reading.maxMs]]) {
+    if (min! > max!) throw new Error("Minimum timing cannot exceed maximum")
+  }
+  if (c.autoBreakIntervalMinSeconds === 0 && c.autoBreakIntervalMaxSeconds !== 0) throw new Error("Set both break intervals to zero to disable automatic breaks")
+  return timing
 }
