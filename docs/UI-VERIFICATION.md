@@ -1,5 +1,11 @@
 # Live UI verification — 2026-10-12
 
+## Queued typing ETA — extension 0.1.3
+
+Installed the actual 0.1.3 VSIX in an isolated code-server 4.109.5 profile and disposable fixture copy. The zero-token `scripts/eta-smoke.mjs` queued 150 characters in strict 60-WPM mode while paused. The real sidebar displayed **150 characters / ~30s after resume**. Clicking its actual Resume button started visible typing; a later screenshot showed **39 characters / ~8s**, then the script verified zero queued characters and zero ETA after completion. [Actual countdown screenshot](TYPING-ETA.png). The operator pause and navigation add elapsed time and are not part of the 30-second base typing estimate. No live user editor or agent session was reloaded.
+
+177 automated tests and seven offline native Claude Mod tests passed, with typecheck, filesystem sandbox and VSIX packaging. Regression coverage includes strict countdown, mid-character progress, multi-batch aggregation, WPM changes, paused work, interruptions, command typing versus execution, Unicode/clipboard accounting, current timed breaks, terminal ETA rendering and seeded-RNG invariance under repeated polling. Future AI output, build execution, navigation and narration are explicitly excluded; optional-input overhead is an expectation, not an exact sampled schedule. Full-project completion time remains unknown. WSL/live Claude-task compatibility is still not established by these checks.
+
 ## Human-profile update — extension 0.1.2
 
 Installed the actual VSIX in another isolated code-server 4.109.5 profile with a disposable Java fixture copy. The live webview's expandable sections expose all 31 numeric timing fields plus WPM, mode and seed. Keyboard navigation opened the sections and changed sentence weight to 600ms, short-pause chance to 10%, automatic intervals to 20–40 scheduled-typing seconds, break duration to 2–5 seconds, typo chance to 1% and false-start chance to 2%. Apply reached the controller and workspace-state persistence; reloading the editor retained those exact values. Export produced JSON/CSV with the nested profile. [Actual advanced sidebar screenshot](HUMAN-PROFILE.png).

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+- Live queued-character count and estimated typing time in the dashboard, status tooltip, Claude controls and companion terminal.
+- Active typing counts down at its original cadence; queued work reflects updated WPM. Pauses, confirmation and command execution are labelled.
+- Expected optional input costs and current timed breaks are included; future AI output, navigation and build runtime are excluded. ETA polling does not consume seeded random state.
+
 ## 0.1.2
 
 - Full persistent human profile: rhythm, burst ranges, short-pause probability/duration, automatic-break intervals/durations, typo/false-start rates, correction/backspace timing, navigation/narration and seed.

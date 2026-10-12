@@ -65,3 +65,12 @@ test('slash pause/resume do not send a NaN numeric parameter to MCP', async ($, 
   await $.command.run({ command: 'human-body', args: 'resume' })
   expect(calls).toEqual([{ operation: 'pause' }, { operation: 'resume' }])
 })
+
+test('terminal panel labels the known queued typing estimate', async ($, on) => {
+  on('mcp.call', () => ({ value: { content: [{ type: 'text', text: JSON.stringify({ configuredWpm: 60, effectiveWpm: 0, elapsedMs: 0, charactersTyped: 0, physicalActionMs: 0, queueWaitMs: 0, clipboardOperations: 0, commandsExecuted: 0, queuedCharacters: 150, typingEtaMs: 30000, typingEtaState: 'paused', paused: true }) }] } }))
+  on('ui.open', () => ({ value: undefined }))
+  await $.command.run({ command: 'human-body', args: '' })
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ type: 'Text', text: /Queued typing ~30s.*150 chars left.*paused/ })).toBeDefined()
+  await ui.unmount()
+})

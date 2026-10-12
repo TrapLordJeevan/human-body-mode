@@ -38,7 +38,8 @@ export function registerExperiment(context: vscode.ExtensionContext, controller:
     const m = data()
     publish(m)
     item.text = `$(keyboard) ${Math.round(m.elapsedMs / 1000)}s · ${m.charactersTyped} chars · ${m.effectiveWpm.toFixed(1)} WPM · ${m.blockedBypassAttempts} blocked`
-    item.tooltip = `Physical actions ${Math.round(m.physicalActionMs / 1000)}s; queue wait ${Math.round(m.queueWaitMs / 1000)}s; clipboard ${m.clipboardOperations}; commands ${m.commandsExecuted}`
+    const eta = controller.typingEstimate()
+    item.tooltip = `Physical actions ${Math.round(m.physicalActionMs / 1000)}s; queue wait ${Math.round(m.queueWaitMs / 1000)}s; clipboard ${m.clipboardOperations}; commands ${m.commandsExecuted}; queued typing ${eta.queuedCharacters} chars / ~${Math.ceil(eta.typingEtaMs / 1000)}s (${eta.typingEtaState}; excludes builds and future output)`
     fs.mkdirSync(dir, { recursive: true })
     fs.writeFileSync(stateFile, JSON.stringify(m, null, 2))
   }

@@ -34,3 +34,13 @@ it("exposes every validated profile parameter with units and a seed", () => {
   expect(html).toContain("Automatic breaks")
   expect(html).toContain('control("profile",')
 })
+
+it("labels the queued typing ETA without claiming a project-completion prediction", () => {
+  const html = panelHtml("vscode-resource:")
+  expect(html).toContain('id="metric-remaining"')
+  expect(html).toContain('id="metric-eta"')
+  expect(html).toContain("after resume")
+  expect(html).toContain("after confirmation")
+  expect(html).toContain("No input queued")
+  expect(html).toContain("not project completion")
+})

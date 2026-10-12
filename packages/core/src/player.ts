@@ -14,6 +14,7 @@ import { planTyping, readingTime } from "./typing"
 import type { ExperimentMetrics } from "./metrics"
 import { commandProblem } from "./commands"
 import type { Cadence } from "./timing"
+import { estimateInput, estimateTyping, type InputEstimate } from "./inputEstimate"
 
 /** What playback reads and changes. */
 export type Scene = {
@@ -140,6 +141,26 @@ export class Player {
   /** A `run` whose command is executing. */
   commandRunning = false
   private playing?: Playing
+  inputBatchId?: number
+  private pendingActions: Action[] = []
+  private input?: { text: string; cadence: Cadence; baseMs: number; pendingMs: number; mistakes: boolean }
+
+  inputEstimate(): InputEstimate {
+    const config = this.stage.config()
+    if (!this.input) return estimateInput(this.pendingActions, config.timing.type, config.commandTyping)
+    const current = estimateTyping(this.input.text, this.input.cadence, this.input.mistakes)
+    current.baseMs = Math.max(0, this.input.baseMs - (this.input.pendingMs ? this.input.pendingMs - this.stage.pacing.remainingMs : 0))
+    const future = estimateInput(this.pendingActions.slice(1), config.timing.type, config.commandTyping)
+    return { characters: current.characters + future.characters, baseMs: current.baseMs + future.baseMs, extraMs: current.extraMs + future.extraMs }
+  }
+
+  private async inputDelay(ms: number): Promise<boolean> {
+    this.input!.pendingMs = ms
+    const complete = await this.delay(ms)
+    this.input!.pendingMs = 0
+    if (complete) this.input!.baseMs = Math.max(0, this.input!.baseMs - ms)
+    return complete
+  }
   private finishAutomaticBreak?: (complete: boolean) => void
 
   skipAutomaticBreak(): void { this.finishAutomaticBreak?.(true) }
@@ -194,6 +215,7 @@ export class Player {
 
   /** Plays a batch, saves the files it edited, and says how it went, and which lines that shows. */
   async play(id: number, actions: Action[]): Promise<{ result: BatchResult; sightings: Sighting[] }> {
+    this.inputBatchId = id
     const playing: Playing = { touched: new Set(), runs: [], sightings: [], edited: false, moved: false }
     this.playing = playing
     let result: BatchResult
@@ -201,6 +223,8 @@ export class Player {
       result = await this.actions(id, actions, playing)
     } finally {
       this.playing = undefined
+      this.pendingActions = []
+      this.input = undefined
     }
     if (playing.runs.length > 0) result.runs = playing.runs
     if (result.status !== "discarded") {
@@ -217,6 +241,7 @@ export class Player {
     const unsaved = await this.save(playing)
     // A `save_failed` error already names them.
     if (unsaved.length > 0 && result.error?.kind !== "save_failed") result.unsaved = unsaved
+    this.inputBatchId = undefined
     return { result, sightings: playing.sightings }
   }
 
@@ -267,6 +292,8 @@ export class Player {
 
   private async actions(id: number, actions: Action[], playing: Playing): Promise<BatchResult> {
     for (let i = 0; i < actions.length; i++) {
+      this.pendingActions = actions.slice(i)
+      this.input = undefined
       if (this.stage.pacing.isInterrupted) return this.stopped(id, actions.slice(i), i > 0)
       let outcome: Outcome
       try {
@@ -516,15 +543,17 @@ export class Player {
     // after the same character timing a human would spend entering it.
     if (config.commandTyping) {
       const chunks = planTyping(command, config.timing.type, true, this.stage.metrics ? config.random : () => 0.5)
+      this.input = { text: command, cadence: config.timing.type, baseMs: chunks.reduce((sum, chunk) => sum + chunk.delay, 0), pendingMs: 0, mistakes: false }
       let previous = " "
       for (const chunk of chunks) {
         const wordStart = /[a-z]/i.test(chunk.text[0] ?? "") && !/[a-z0-9_]/i.test(previous)
-        if (!(await this.typingPause(config.timing.type, wordStart)) || !(await this.delay(chunk.delay))) return { kind: "interrupted" }
+        if (!(await this.typingPause(config.timing.type, wordStart)) || !(await this.inputDelay(chunk.delay))) return { kind: "interrupted" }
         if (this.stage.metrics) {
           this.stage.metrics.charactersTyped += Array.from(chunk.text).length
           this.stage.metrics.typingSinceBreakMs += chunk.delay
         }
         previous = chunk.text.at(-1) ?? previous
+        this.input.text = this.input.text.slice(chunk.text.length)
       }
     }
 
@@ -606,6 +635,7 @@ export class Player {
     const { timing, random } = this.stage.config()
     const scale = fast ? timing.fastFactor : 1
     const chunks = planTyping(before + after, timing.type, isLineStart(doc, insertAt), this.stage.metrics ? random : () => 0.5, scale)
+    this.input = { text: before + after, cadence: timing.type, baseMs: chunks.reduce((sum, chunk) => sum + chunk.delay, 0), pendingMs: 0, mistakes: true }
 
     if (chunks.length === 0 && s.selection) chunks.push({ text: "", delay: 0 })
     let typed = ""
@@ -614,7 +644,7 @@ export class Player {
       const chunk = chunks[i]!
       const previous = typed.at(-1) ?? doc[insertAt - 1] ?? " "
       const wordStart = /^[a-z]/i.test(chunk.text) && !/[a-z0-9_]/i.test(previous)
-      if (!(await this.typingPause(timing.type, wordStart)) || !(await this.delay(chunk.delay))) {
+      if (!(await this.typingPause(timing.type, wordStart)) || !(await this.inputDelay(chunk.delay))) {
         if (typed === "") return { kind: "interrupted" }
         const rest =
           typed.length <= before.length
@@ -648,6 +678,7 @@ export class Player {
       undoStarted = true
       if (this.stage.metrics) this.stage.metrics.charactersTyped += Array.from(chunk.text).length
       typed += chunk.text
+      this.input.text = this.input.text.slice(chunk.text.length)
       this.follow()
     }
     if (after !== "") {

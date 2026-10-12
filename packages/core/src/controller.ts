@@ -14,6 +14,7 @@ import { defaultTiming, validatedTiming, type Timing, type TimingOverrides } fro
 import { ExperimentMetrics, type MetricsSnapshot } from "./metrics"
 import { seededRandom } from "./typing"
 import { commandProblem } from "./commands"
+import { estimateInput } from "./inputEstimate"
 
 export type Config = {
   maxBlockMs: number
@@ -171,7 +172,29 @@ export class Controller {
 
   controlStatus(): object {
     const automaticBreakRemainingMs = Math.max(0, this.metrics.automaticBreakEndsAt - Date.now())
-    return { ...this.metricsSnapshot(), paused: this.isPaused || automaticBreakRemainingMs > 0, active: this.isActive, configuredWpm: this.config.timing.type.wpm, configuredMode: this.config.timing.type.mode, breakRemainingMs: Math.max(0, this.breakUntil - Date.now()), automaticBreakRemainingMs, profile: this.profile() }
+    return { ...this.metricsSnapshot(), ...this.typingEstimate(), paused: this.isPaused || automaticBreakRemainingMs > 0, active: this.isActive, configuredWpm: this.config.timing.type.wpm, configuredMode: this.config.timing.type.mode, breakRemainingMs: Math.max(0, this.breakUntil - Date.now()), automaticBreakRemainingMs, profile: this.profile() }
+  }
+
+  typingEstimate(): { queuedCharacters: number; typingBaseRemainingMs: number; typingEtaMs: number; typingEtaState: string } {
+    const s = this.activeSession()
+    const cadence = this.config.timing.type
+    let queuedCharacters = 0, baseMs = 0, extraMs = 0
+    for (const batch of s?.queue ?? []) {
+      const value = s!.player.inputBatchId === batch.id ? s!.player.inputEstimate() : estimateInput(batch.actions, cadence, this.config.commandTyping)
+      queuedCharacters += value.characters
+      baseMs += value.baseMs
+      extraMs += value.extraMs
+    }
+    const remainingBreak = Math.max(0, this.metrics.automaticBreakEndsAt - Date.now(), this.breakUntil - Date.now())
+    if (cadence.mode === "variable" && (cadence.autoBreakIntervalMinSeconds ?? 0) > 0) {
+      const interval = ((cadence.autoBreakIntervalMinSeconds! + cadence.autoBreakIntervalMaxSeconds!) / 2) * 1000
+      const until = Math.max(0, (this.metrics.nextAutomaticBreakMs || interval) - this.metrics.typingSinceBreakMs)
+      const breaks = baseMs > until + 1e-6 ? 1 + Math.floor((baseMs - until - 1e-6) / interval) : 0
+      extraMs += breaks * ((cadence.autoBreakMinSeconds! + cadence.autoBreakMaxSeconds!) / 2) * 1000
+    }
+    const manualPause = [...this.pauseReasons].some(reason => reason !== "break")
+    const state = s?.confirming ? "confirmation" : manualPause ? "paused" : remainingBreak > 0 ? "break" : s?.player.commandRunning ? "command-running" : queuedCharacters > 0 ? "typing" : "idle"
+    return { queuedCharacters, typingBaseRemainingMs: Math.max(0, baseMs), typingEtaMs: queuedCharacters > 0 ? Math.max(0, baseMs + extraMs + remainingBreak) : 0, typingEtaState: state }
   }
 
   profile(): { timing: Timing; seed: number } { return { timing: this.config.timing, seed: this.seed } }

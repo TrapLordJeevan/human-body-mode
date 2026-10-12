@@ -1,13 +1,14 @@
 // Delays for playback that can be paused, and interrupted for good.
 
 /** What playback waits with. */
-export type Pacing = Pick<Timeline, "sleep" | "isInterrupted" | "signal">
+export type Pacing = Pick<Timeline, "sleep" | "isInterrupted" | "signal" | "remainingMs">
 
 /** No waiting at all, and never interrupted. */
 export const instant: Pacing = {
   sleep: () => Promise.resolve(true),
   isInterrupted: false,
   signal: new AbortController().signal,
+  remainingMs: 0,
 }
 
 type Pending = {
@@ -29,6 +30,11 @@ export class Timeline {
 
   get isInterrupted(): boolean {
     return this.interrupted
+  }
+
+  get remainingMs(): number {
+    const p = this.pending
+    return p ? Math.max(0, p.remaining - (p.timer === undefined ? 0 : Date.now() - p.startedAt)) : 0
   }
 
   /** Aborted when playback is interrupted, for waits that aren't delays. */

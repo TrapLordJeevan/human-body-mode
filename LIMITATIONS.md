@@ -1,5 +1,9 @@
 # Limitations and unverified claims
 
+## Queued typing ETA (0.1.3)
+
+The ETA estimates only work admitted to this editor's typing queue, including authored code and command entry. It is not an estimate for completing the project and cannot predict future AI output, rejected submissions, requests still waiting to enter the queue, navigation, narration or build runtime. Strict active character delays count down directly from the scheduler. Optional short pauses, mistakes and future automatic breaks use expected costs and can make the estimate jump or differ from actual playback. Changing profiles mid-block mixes the active block's fixed cadence with new queued-work settings. An indefinite pause/approval has no wall-clock finish time; the displayed duration is conditional on resuming/approving. Status polling never draws random numbers or changes playback decisions.
+
 ## Optional human-behaviour profile (0.1.2)
 
 - This is a seeded heuristic, not a model fitted to measured human typing. Typo neighbours use a simplified QWERTY row ordering and false starts are three-letter synthetic prefixes, not realistic semantic revisions. Mistakes apply only to eligible ASCII editor letters (not the first chunk replacing a selection); they do not affect terminal commands or non-ASCII text. Defaults are off.

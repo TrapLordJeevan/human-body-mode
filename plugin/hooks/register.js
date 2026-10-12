@@ -80,6 +80,7 @@ export function register(on) {
     return Box({ flexDirection: 'column', gap: 1, children: [
       Text({ children: summary() }),
       Text({ children: status ? `Physical ${(status.physicalActionMs / 1000).toFixed(1)}s · queue wait ${(status.queueWaitMs / 1000).toFixed(1)}s · clipboard ${status.clipboardOperations} · commands ${status.commandsExecuted}` : 'Requires the AI Pair editor backend; no model requests are made by this panel.' }),
+      ...(status ? [Text({ children: status.queuedCharacters > 0 ? `Queued typing ~${Math.ceil(status.typingEtaMs / 1000)}s · ${status.queuedCharacters} chars left · ${status.typingEtaState}. Excludes future output and builds.` : 'No input queued; project completion time is unknown.' })] : []),
       ...(error && status ? [Text({ children: error })] : []),
       Box({ gap: 1, children: [
         Button({ key: 'pause', label: 'Pause', onPress: () => control($, { operation: 'pause' }) }),

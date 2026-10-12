@@ -33,7 +33,7 @@ async function main() {
         const s = await control('status')
         let blocked = 0
         try { blocked = require('node:fs').readFileSync(path.join(process.cwd(), '.human-body-mode/blocked.jsonl'), 'utf8').trim().split('\n').filter(Boolean).length } catch {}
-        console.log(`elapsed ${(s.elapsedMs / 1000).toFixed(1)}s | physical ${(s.physicalActionMs / 1000).toFixed(1)}s | queue ${(s.queueWaitMs / 1000).toFixed(1)}s | target ${s.configuredWpm} WPM | effective ${s.effectiveWpm?.toFixed(1)} | chars ${s.charactersTyped} | clipboard ${s.clipboardOperations} | commands ${s.commandsExecuted} | blocked (persistent) ${blocked} | ${s.paused ? 'PAUSED' : 'RUNNING'}`)
+        console.log(`elapsed ${(s.elapsedMs / 1000).toFixed(1)}s | physical ${(s.physicalActionMs / 1000).toFixed(1)}s | queue ${(s.queueWaitMs / 1000).toFixed(1)}s | target ${s.configuredWpm} WPM | effective ${s.effectiveWpm?.toFixed(1)} | chars ${s.charactersTyped} | typing left ${s.queuedCharacters ?? 0} chars / ~${Math.ceil((s.typingEtaMs ?? 0) / 1000)}s (${s.typingEtaState ?? 'unknown'}; excludes builds/future output) | clipboard ${s.clipboardOperations} | commands ${s.commandsExecuted} | blocked (persistent) ${blocked} | ${s.paused ? 'PAUSED' : 'RUNNING'}`)
       } catch (error) { console.error(error.message) } finally { busy = false }
     }
     await poll()

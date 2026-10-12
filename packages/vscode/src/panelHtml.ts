@@ -256,7 +256,10 @@ export function panelHtml(cspSource: string): string {
       <div><span>Blocked attempts</span><strong id="metric-blocked">0</strong></div>
       <div><span>Corrections / false starts</span><strong id="metric-corrections">0 / 0</strong></div>
       <div><span>Automatic breaks / time</span><strong id="metric-breaks">0 / 0s</strong></div>
+      <div><span>Characters left (queued)</span><strong id="metric-remaining">0</strong></div>
+      <div><span>Typing ETA (estimate)</span><strong id="metric-eta">No input queued</strong></div>
     </div>
+    <small id="eta-note">Known queue only—not project completion. Includes expected input pauses/corrections; excludes future AI output, navigation and build runtime.</small>
     <div class="row">
       <button class="soft" data-control="pause">Pause input</button><button class="soft" data-control="resume">Resume</button>
       <button class="soft" data-control="reset">Start / reset clock</button><button class="soft" data-control="stop">Stop clock</button>
@@ -602,6 +605,11 @@ export function panelHtml(cspSource: string): string {
     $("metric-blocked").textContent = m.blockedBypassAttempts || 0;
     $("metric-corrections").textContent = (m.typingCorrections || 0) + " / " + (m.falseStarts || 0);
     $("metric-breaks").textContent = (m.automaticBreaks || 0) + " / " + seconds(m.automaticBreakMs);
+    $("metric-remaining").textContent = m.queuedCharacters || 0;
+    const left = Math.ceil(Math.max(0, m.typingEtaMs || 0) / 1000);
+    const duration = left >= 60 ? Math.floor(left / 60) + "m " + String(left % 60).padStart(2, "0") + "s" : left + "s";
+    $("metric-eta").textContent = m.queuedCharacters > 0 ? "~" + duration + (m.typingEtaState === "paused" ? " after resume" : m.typingEtaState === "confirmation" ? " after confirmation" : "") : "No input queued";
+    $("eta-note").textContent = (m.typingEtaState === "command-running" ? "Build/command running; its runtime is unknown. " : m.typingEtaState === "break" ? "Current break included. " : "") + "Known typing queue only—not project completion. Excludes future AI output, navigation and build runtime; optional input delays are estimates.";
     $("operator-state").textContent = (m.paused ? "Input paused" : m.active ? "Agent connected" : "Editor ready · waiting for agent") + (m.automaticBreakRemainingMs > 0 ? " · automatic break " + seconds(m.automaticBreakRemainingMs) : m.breakRemainingMs > 0 ? " · break " + seconds(m.breakRemainingMs) : "") + (m.running ? " · clock running" : " · clock stopped");
     if (m.profile) currentProfile = m.profile;
     if (!cadenceDirty) {
