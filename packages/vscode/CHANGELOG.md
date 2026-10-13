@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4
+
+- Multiple agent sessions per window: FIFO shared typer (default), individual typers with file/command locks, or lead-only writing.
+- Same-host workspace/window selector, selected-agent controls and Pause all/Resume all. Common cadence/automatic-break budget in shared/lead mode.
+- Cleaner theme-aware sidebar with collapsible counters/cadence/sessions, explicit pause/break reasons and visible version.
+- Reconnect/continue copies a prompt; it does not auto-send, restore queues or reset the clock.
+- Independently connected MCP clients tested against a real packaged editor. Live Claude/Codex multi-agent orchestration remains unverified.
+
 ## 0.1.3
 
 - Live queued-character count and estimated typing time in the dashboard, status tooltip, Claude controls and companion terminal.

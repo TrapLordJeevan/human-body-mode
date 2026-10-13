@@ -15,7 +15,25 @@ npm ci
 npm run build:plugin
 ```
 
-Download `human-body-mode-0.1.3.vsix` from the [GitHub prerelease](https://github.com/TrapLordJeevan/human-body-mode/releases/tag/v0.1.3), or build it with `npm run package`, then use VS Code's **Extensions → Install from VSIX**. Version 0.1.2 lacks the typing ETA; 0.1.1 has only basic controls; 0.1.0 has no dashboard. **Upgrade/reload at a safe stopping point: reloading disconnects an active editor session.** For Remote–SSH/WSL, install it in the **remote host**, not just your laptop. Open the target project there; the CLI and extension host must run on the same server/container and OS user. Use Bash shell integration and `aiPair.confirmCommands: false`, as in the supplied `config/` examples.
+Download `human-body-mode-0.1.4.vsix` from the [GitHub prerelease](https://github.com/TrapLordJeevan/human-body-mode/releases/tag/v0.1.4), or build it with `npm run package`, then use VS Code's **Extensions → Install from VSIX**. The sidebar displays its version. **Upgrade/reload at a safe stopping point: reloading disconnects active editor sessions.** For Remote–SSH/WSL, install it in the **remote host**, not just your laptop. Open the target project there; the CLI and extension host must run on the same server/container and OS user. Use Bash shell integration and `aiPair.confirmCommands: false`, as in the supplied `config/` examples.
+
+### Multiple projects and agents
+
+Use a separate VS Code window per project. Expand **Sessions & typers** to choose another running window on the same host/user, or an agent. Controls target the selected agent, except **Pause all / Resume all**, the workspace clock and shared/lead cadence. Remote narration/reply history is not forwarded; use that project's window/terminal for conversation. Export/reset from the project's own window. Different SSH hosts/users are not combined.
+
+- **Shared** (default): separate agent sessions/cursors/clipboards queue complete batches through one typer. WPM/cadence and automatic-break budgets are shared. Adding agents does not multiply typing throughput.
+- **Individual**: independent per-agent WPM budgets. Different-file batches can overlap; same-file batches and commands are serialized. This increases total throughput and is outside single-human benchmark rules.
+- **Lead**: choose **Make selected agent the lead**. Others can read and advise but cannot submit physical actions. Advice forwarding is up to the harness/operator; the extension does not orchestrate reasoning.
+
+Mode/lead changes require pending input to finish or be discarded. An agent is an MCP relay connection, not a verified native subagent identity. Two terminals can each start pairing in one project; a harness sharing one MCP connection appears as one agent. Same-file stale plans are interrupted, not silently replayed or merged.
+
+**Reconnect / continue…** copies a continuation prompt for your existing agent terminal. Paste/send it there to start a new editor session and inspect current files/Git state before continuing. It does not reset the clock, auto-send a model request or resurrect a lost queue. Pause labels distinguish manual pause, reply drafting, looking away and timed/automatic break countdowns.
+
+Zero-token real-editor check: open a disposable project, create a `.multi-agent-smoke-fixture` marker there, then run `node scripts/multi-agent-smoke.mjs /absolute/disposable/project`. It checks independent clients, measured shared/individual throughput, isolated pause, lead-only writes and independent session end. Never use a real competition project.
+
+### Token overhead
+
+Characters are animated locally from batched `step` calls, not one model/MCP request per keystroke. Dashboard polling, WPM changes and breaks do not invoke a model. Tool definitions, the start guide, authored arguments and results still occupy context; reports/read content and extra turns can cost more than native editing. No measured token-saving percentage or billing estimate is claimed. Usage depends on the client/model and caching; see [Anthropic's tool-use documentation](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview). The extension does not measure this assistant's token usage.
 
 Click the **keyboard icon in the left activity bar**, or the bottom WPM indicator, to open the Human Body Mode dashboard. Alternatively run **Human Body Mode: Open Dashboard** from the command palette. It shows elapsed/physical/queue time, cumulative effective WPM, characters, clipboard operations, commands, blocked attempts, corrections and automatic breaks. Click **Apply profile** to validate/save changes for this workspace; typing settings apply to the next block. The profile survives editor reloads without writing project source or changing global settings. Previously installed windows may retain their old view location; use Open Dashboard or VS Code's View: Reset View Locations if needed.
 
@@ -53,12 +71,12 @@ npm run test:timing-real  # intentionally takes about 60 seconds
 
 `verify:core` is the portable source/build check. `verify` also needs Claude Code on PATH for its offline Mod checks; those checks do not call a model. `npm run release` builds a source archive and VSIX locally from a clean committed tree; it does not publish or change a remote.
 
-Artifacts are `human-body-mode-0.1.0.vsix` and `plugin/` (including its bundled MCP server).
+Artifacts are `human-body-mode-0.1.4.vsix` and `plugin/` (including its bundled MCP server).
 
 ## Install
 
 ```sh
-code --install-extension human-body-mode-0.1.0.vsix
+code --install-extension human-body-mode-0.1.4.vsix
 claude --plugin-dir "$PWD/plugin"
 ```
 

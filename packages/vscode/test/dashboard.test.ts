@@ -67,3 +67,17 @@ it("persists only validated profiles and reports Apply acknowledgement", async (
 it("exports nested profile values as correctly escaped CSV cells", () => {
   expect(metricsCsv({ chars: 3, profile: { type: { wpm: 60, mode: "strict" } } })).toBe('"chars","profile"\n"3","{""type"":{""wpm"":60,""mode"":""strict""}}"\n')
 })
+
+it("routes multi-session controls through the broker and replaces selected-agent history", async () => {
+  const { controller } = setup()
+  const { panel, receive, messages } = dashboard(controller)
+  panel.controlHandler = vi.fn().mockResolvedValue({ selectedAgent: "agent-2", paused: true })
+  receive({ type: "control", operation: "selectAgent", value: "agent-2" })
+  await vi.waitFor(() => expect(messages.at(-1)).toMatchObject({ type: "controlResult", error: "" }))
+  expect(panel.controlHandler).toHaveBeenCalledWith(expect.objectContaining({ operation: "selectAgent", value: "agent-2" }))
+  expect(messages.some(m => m.type === "metrics" && m.data.selectedAgent === "agent-2")).toBe(true)
+  panel.replaceHistory([{ type: "session", active: true, task: "second" }, { type: "say", text: "Only this agent" }])
+  expect(messages.at(-2)).toEqual({ type: "resetView" })
+  expect(messages.at(-1)).toMatchObject({ type: "replay", events: [{ type: "session", active: true }, { type: "say", text: "Only this agent" }] })
+  expect(executeCommand).toHaveBeenCalledWith("setContext", "aiPair.active", true)
+})

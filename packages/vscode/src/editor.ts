@@ -86,6 +86,10 @@ const CURSOR_TEXT = "var(--vscode-aiPair-cursorForeground)"
 const READ_TEXT = "var(--vscode-aiPair-cursorReadForeground)"
 
 export class VsCodeEditor implements EditorPort, vscode.Disposable {
+  private static peerEdits = new Map<string, Set<OwnEdit>>()
+  private static peerNavigationUntil = 0
+  private static navigation: Promise<void> = Promise.resolve()
+  private static navigating = false
   controller?: Controller
   /** The programmer's selection changed: what the panel offers to send along with a reply. */
   onSelection?: (ref: Ref | undefined) => void
@@ -201,6 +205,17 @@ export class VsCodeEditor implements EditorPort, vscode.Disposable {
   }
 
   async show(file: string): Promise<void> {
+    // Even independent typers share VS Code's editor group; simultaneous opens can be rejected.
+    const result = VsCodeEditor.navigation.then(async () => {
+      VsCodeEditor.navigating = true
+      try { await this.showFile(file) }
+      finally { this.selfNav(); VsCodeEditor.navigating = false }
+    })
+    VsCodeEditor.navigation = result.catch(() => {})
+    return result
+  }
+
+  private async showFile(file: string): Promise<void> {
     const uri = vscode.Uri.file(file)
     try {
       await vscode.workspace.fs.stat(uri)
@@ -224,6 +239,9 @@ export class VsCodeEditor implements EditorPort, vscode.Disposable {
     const pending = this.own.get(file) ?? []
     this.own.set(file, pending)
     pending.push(entry)
+    const peers = VsCodeEditor.peerEdits.get(file) ?? new Set<OwnEdit>()
+    VsCodeEditor.peerEdits.set(file, peers)
+    peers.add(entry)
     try {
       if (editor) {
         const doc = editor.document
@@ -238,6 +256,8 @@ export class VsCodeEditor implements EditorPort, vscode.Disposable {
         if (!(await vscode.workspace.applyEdit(edit))) throw new Error("The edit was rejected.")
       }
     } finally {
+      peers.delete(entry)
+      if (!peers.size) VsCodeEditor.peerEdits.delete(file)
       const i = pending.indexOf(entry)
       if (i !== -1) pending.splice(i, 1)
     }
@@ -354,7 +374,8 @@ export class VsCodeEditor implements EditorPort, vscode.Disposable {
     }
 
     if (before === undefined || !this.inWorkspace(file)) return
-    if (this.byProgrammer(e, after)) this.controller?.userEdit(file, before, after, changes)
+    const peer = [...(VsCodeEditor.peerEdits.get(file) ?? [])].some(edit => changes.length === 1 && edit.offset === change.offset && edit.deleteLength === change.deleteLength && edit.text === change.text)
+    if (!peer && this.byProgrammer(e, after)) this.controller?.userEdit(file, before, after, changes)
     else this.controller?.otherEdit(file, before, after, changes)
   }
 
@@ -382,14 +403,14 @@ export class VsCodeEditor implements EditorPort, vscode.Disposable {
   private onActiveEditor(editor: vscode.TextEditor | undefined): void {
     if (editor?.document.uri.scheme === "file") this.onSelectionChange(editor)
     const target = this.target()
-    if (!editor || Date.now() < this.selfNavUntil || !target || !FOLLOWING.has(this.state)) return
+    if (!editor || VsCodeEditor.navigating || Date.now() < Math.max(this.selfNavUntil, VsCodeEditor.peerNavigationUntil) || !target || !FOLLOWING.has(this.state)) return
     if (editor.document.uri.fsPath !== target.file) this.controller?.pause("away")
   }
 
   private onScroll(e: vscode.TextEditorVisibleRangesChangeEvent): void {
     this.viewport(e.textEditor)
     const target = this.target()
-    if (Date.now() < this.selfNavUntil || !target || !FOLLOWING.has(this.state)) return
+    if (VsCodeEditor.navigating || Date.now() < Math.max(this.selfNavUntil, VsCodeEditor.peerNavigationUntil) || !target || !FOLLOWING.has(this.state)) return
     if (e.textEditor.document.uri.fsPath !== target.file) return
     const line = e.textEditor.document.positionAt(target.offset).line
     const visible = e.visibleRanges.some((r) => r.start.line <= line && line <= r.end.line)
@@ -577,6 +598,7 @@ export class VsCodeEditor implements EditorPort, vscode.Disposable {
 
   private selfNav(): void {
     this.selfNavUntil = Date.now() + SELF_NAV_MS
+    VsCodeEditor.peerNavigationUntil = this.selfNavUntil
   }
 
   private inWorkspace(file: string): boolean {

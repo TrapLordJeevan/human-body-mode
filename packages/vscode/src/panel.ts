@@ -21,7 +21,7 @@ type FromPanel =
   /** A command the intro offers, like Set Up Agent. */
   | { type: "command"; command: string }
   | { type: "runDecision"; id: number; run: boolean; remember?: boolean }
-  | { type: "control"; operation: string; value?: unknown; command?: string; profile?: unknown }
+  | { type: "control"; operation: string; value?: unknown; command?: string; profile?: unknown; scope?: string; agentId?: string; leadAgent?: string }
 
 const MAX_LOG = 400
 
@@ -31,6 +31,7 @@ const PANEL_COMMANDS: ReadonlySet<string> = new Set(["aiPair.playDemo", "aiPair.
 export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
   static readonly viewId = "aiPair.narration"
   controller?: Controller
+  controlHandler?: (args: Record<string, unknown>) => Promise<object>
   private view?: vscode.WebviewView
   /** Everything posted so far, replayed when the view is (re)created. */
   private readonly log: PanelEvent[] = []
@@ -50,6 +51,14 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
   showMetrics(data: object): void {
     this.metrics = data
     void this.view?.webview.postMessage({ type: "metrics", data })
+  }
+
+  replaceHistory(events: PanelEvent[]): void {
+    this.log.splice(0, this.log.length, ...events)
+    const session = events.findLast(event => event.type === "session")
+    void vscode.commands.executeCommand("setContext", "aiPair.active", session?.type === "session" && session.active)
+    void this.view?.webview.postMessage({ type: "resetView" })
+    void this.view?.webview.postMessage({ type: "replay", events: this.log })
   }
 
   post(event: PanelEvent): void {
@@ -91,6 +100,15 @@ export class NarrationPanel implements PanelPort, vscode.WebviewViewProvider {
         this.showMetrics(this.metrics)
         return
       case "control": {
+        if (this.controlHandler) {
+          void this.controlHandler(m).then(data => {
+            this.showMetrics(data)
+            void this.view?.webview.postMessage({ type: "controlResult", error: "", profileApplied: m.operation === "profile" })
+          }).catch((error: unknown) => {
+            void this.view?.webview.postMessage({ type: "controlResult", error: String(error) })
+          })
+          return
+        }
         if (m.operation === "export" || m.operation === "reset") {
           void vscode.commands.executeCommand(`humanBody.${m.operation}`)
         } else if (["pause", "resume", "stop", "wpm", "mode", "break", "run", "profile"].includes(m.operation)) {

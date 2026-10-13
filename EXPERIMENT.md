@@ -2,11 +2,15 @@
 
 ## Clock and controls
 
+Version 0.1.4 permits multiple agent connections in one workspace, with **shared** typing as the benchmark default. Separate windows/projects have independent schedulers. **Individual** typers multiply total throughput and must be reported as a separate condition, never single-human mode. **Lead** permits only the selected agent to write; advice forwarding is the harness/operator's responsibility. Record mode, relay IDs and profiles from the exported `agents` snapshots. A native harness may share one relay among subagents, so relay counts are not verified native subagent counts.
+
+Shared scheduling leases whole batches, including navigation, confirmation and build waits, which introduces extra contention relative to editing during builds. Automatic-break typing budgets are common in shared/lead mode. Random streams use the configured seed per controller and may correlate cadence across agents. Individual mode locks same-file batches and commands; stale conflicting plans must be re-read. Individual physical/wait counters overlap and must not be added to the workspace clock. Selected-agent ETA excludes other-agent contention. Export before reload: editor sessions and secondary agent identities/counters are not live restored.
+
 The dashboard/TUI/companion terminal also expose queued characters and a typing ETA. This forecasts accepted queued input only, including command entry—not finishing the project. It excludes future AI output, navigation, narration and build runtime. Strict active typing uses remaining scheduler delays; optional input costs/future breaks use expectations. Manual pauses or approvals make it conditional on continuation. ETA polling does not consume the seeded random stream. Estimated durations must not be added to actual elapsed/physical/wait metrics.
 
 Open the VS Code dashboard using its keyboard activity-bar icon, bottom WPM indicator, or `Human Body Mode: Open Dashboard`. It provides WPM, cadence, pause/resume, timed breaks, clock reset/stop, queued commands and export controls. The original clock/export commands and Claude TUI/companion terminal controls remain available. Export writes JSON and CSV under the target repository's `.human-body-mode/` directory. Effective WPM is cumulative over all physical actions, not instantaneous typing speed.
 
-Prompt-writing time is included when the supervisor resets immediately before entering the task prompt. Elapsed wall time is never derived by adding action and wait intervals, so overlapping reasoning is not double-counted. Physical-action time sums the single queue's actual delays. Queue wait records the union of FIFO waiting intervals, not a per-agent sum; it overlaps physical playback and must not be added to it.
+Prompt-writing time is included when the supervisor resets immediately before entering the task prompt. Elapsed wall time is never derived by adding action and wait intervals, so overlapping reasoning is not double-counted. Physical-action time sums each controller's actual delays. Queue wait records the union of that controller's FIFO waiting intervals, not a workspace sum across agents; it overlaps physical playback and must not be added to it.
 
 ## Input rules
 

@@ -1,5 +1,9 @@
 # Human Body Mode
 
+Version 0.1.4 adds **Sessions & typers**: choose agents or other project windows on the same server/user, then use shared, individual or lead-only typing. Shared is the single-human default; individual typers deliberately increase total throughput. Stats/pauses target the selected agent, with Pause all/Resume all for the workspace. Shared/lead cadence and automatic-break budgets are common. Pause labels name manual pause, reply drafting, looking away, or a break countdown. The sidebar shows its installed version.
+
+**Reconnect / continue…** copies a prompt to send in your existing agent terminal. It doesn't call a model, auto-send a message, restore unfinished actions or reset the clock. New connections are selected automatically when the previous selected session has ended. Cross-window controls don't forward conversation history; use the target project's own window/terminal for replies and export/reset.
+
 This extension is the visible input broker for the Human Body Mode Claude Code experiment. It is installed together with the repository's Claude Code Mod; alone, it does not enforce the experiment.
 
 It adapts AI Pair's MIT-licensed VS Code playback implementation. See the project `README.md`, `EXPERIMENT.md`, and `LIMITATIONS.md` for setup, protocol, and enforcement boundaries.

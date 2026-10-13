@@ -49,6 +49,7 @@ export type Stage = {
   lines: LineIds
   /** Omitted during in-memory rehearsal. */
   metrics?: ExperimentMetrics
+  breakMetrics?(): ExperimentMetrics
   /**
    * Whether the line numbered `line` in `file` is the one the agent was last shown there, by its
    * identity. Given, a `move` only goes to a line the agent knows the number of.
@@ -166,7 +167,7 @@ export class Player {
   skipAutomaticBreak(): void { this.finishAutomaticBreak?.(true) }
 
   private async waitAutomaticBreak(): Promise<boolean> {
-    const metrics = this.stage.metrics!
+    const metrics = this.stage.breakMetrics?.() ?? this.stage.metrics!
     const duration = Math.max(0, metrics.automaticBreakEndsAt - Date.now())
     const started = Date.now()
     const complete = await new Promise<boolean>(resolve => {
@@ -185,7 +186,7 @@ export class Player {
   }
 
   private async typingPause(cadence: Cadence, wordStart: boolean): Promise<boolean> {
-    const metrics = this.stage.metrics
+    const metrics = this.stage.breakMetrics?.() ?? this.stage.metrics
     if (!metrics || cadence.mode === "strict") return true
     // A persisted deadline prevents reconnects/restarts from silently skipping a pending break.
     if (metrics.automaticBreakEndsAt > Date.now() && !(await this.waitAutomaticBreak())) return false
@@ -550,7 +551,7 @@ export class Player {
         if (!(await this.typingPause(config.timing.type, wordStart)) || !(await this.inputDelay(chunk.delay))) return { kind: "interrupted" }
         if (this.stage.metrics) {
           this.stage.metrics.charactersTyped += Array.from(chunk.text).length
-          this.stage.metrics.typingSinceBreakMs += chunk.delay
+          ;(this.stage.breakMetrics?.() ?? this.stage.metrics).typingSinceBreakMs += chunk.delay
         }
         previous = chunk.text.at(-1) ?? previous
         this.input.text = this.input.text.slice(chunk.text.length)
@@ -652,7 +653,7 @@ export class Player {
             : CURSOR_MARKER + after.slice(typed.length - before.length)
         return { kind: "interrupted", rest: fast ? { type_fast: rest } : { type: rest } }
       }
-      if (this.stage.metrics) this.stage.metrics.typingSinceBreakMs += chunk.delay
+      if (this.stage.metrics) (this.stage.breakMetrics?.() ?? this.stage.metrics).typingSinceBreakMs += chunk.delay
       if (this.stage.metrics && timing.type.mode === "variable" && !s.selection && /^[a-z]$/i.test(chunk.text)) {
         const falseStart = wordStart && (timing.type.falseStartChance ?? 0) > 0 && random() < timing.type.falseStartChance!
         const typo = !falseStart && (timing.type.typoChance ?? 0) > 0 && random() < timing.type.typoChance!

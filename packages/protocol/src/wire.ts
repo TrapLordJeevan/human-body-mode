@@ -16,6 +16,8 @@ export type Discovery = {
   protocolVersion: number
   /** Epoch milliseconds. */
   lastFocused: number
+  /** This window supports operator multi-agent controls. */
+  multiAgent?: boolean
 }
 
 export function aiPairHome(): string {

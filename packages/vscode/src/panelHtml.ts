@@ -92,6 +92,34 @@ export function panelHtml(cspSource: string): string {
   #cadence-form details input { width: 70px; }
   #profile-seed { width: 120px; }
 
+  /* A compact control room, using theme tokens rather than hard-coded dark colors. */
+  #dashboard { padding: 16px 12px; background: var(--vscode-sideBar-background, var(--surface)); }
+  .dashboard-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .dashboard-title h2 { margin: 0 !important; font-size: 14px !important; letter-spacing: -.2px; }
+  #extension-version { color: var(--muted); font-size: 10px; border: 1px solid var(--border); border-radius: 20px; padding: 3px 7px; }
+  #operator-state { border: 1px solid var(--border); border-left: 3px solid var(--ok); border-radius: 8px; padding: 10px; line-height: 1.6; margin: 10px 0; color: var(--fg); }
+  #operator-state[data-paused="true"] { border-left-color: var(--read); }
+  #metrics { gap: 8px; margin: 12px 0; }
+  #metrics > div { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 11px 9px; min-width: 0; }
+  #metrics strong { display: block; font-size: 20px; font-weight: 600; margin-top: 5px; overflow-wrap: anywhere; letter-spacing: -.4px; }
+  #metric-eta { font-size: 16px !important; }
+  #dashboard button { min-height: 30px; height: auto; padding: 6px 10px; border-radius: 6px; }
+  #dashboard > details, #session-controls { border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin: 12px 0; background: var(--surface); }
+  #dashboard > details > summary { cursor: pointer; font-weight: 600; font-size: 12px; }
+  #dashboard small { display: block; line-height: 1.5; margin-top: 6px; }
+  #dashboard input, #dashboard select { min-height: 30px; border-radius: 5px; padding: 5px 7px; }
+  #session-controls label { display: grid; grid-template-columns: 70px minmax(0, 1fr); margin: 8px 0; }
+  #agent-list { display: grid; gap: 6px; margin-top: 10px; }
+  .agent-card { border-left: 2px solid var(--border); padding: 6px 8px; background: var(--soft); border-radius: 4px; overflow-wrap: anywhere; }
+  .agent-card.selected { border-left-color: var(--accent); }
+  .agent-card small { margin-top: 2px !important; }
+  .detail-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 8px; padding-top: 12px; font-variant-numeric: tabular-nums; }
+  .detail-metrics span { display: block; color: var(--muted); font-size: 11px; margin-bottom: 3px; }
+  #cadence-form details { border-top: 1px solid var(--border); padding-top: 4px; }
+  #idle { padding: 8px 0; }
+  #idle-text { font-size: 12px; }
+  @media (max-width: 240px) { #metrics, .detail-metrics { grid-template-columns: 1fr; } #session-controls label { grid-template-columns: 1fr; gap: 4px; } }
+
   button {
     font: inherit; font-size: 12px; height: 24px; min-width: 24px; box-sizing: border-box; padding: 0 5px;
     display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: none;
@@ -243,11 +271,30 @@ export function panelHtml(cspSource: string): string {
 <body>
 <div id="app">
   <section id="dashboard" aria-label="Physical input controls">
-    <h2>Human Body Mode</h2>
+    <div class="dashboard-title"><h2>Human Body Mode</h2><span id="extension-version">v0.1.4</span></div>
+    <details id="session-controls"><summary id="session-summary">Sessions &amp; typers</summary>
+      <label>Workspace<select id="workspace-picker" aria-label="Workspace"><option value="local">This window</option></select></label>
+      <label>Agent<select id="agent-picker" aria-label="Selected agent"><option value="">Waiting for agent</option></select></label>
+      <label>Typers<select id="typing-mode" aria-label="Typing mode"><option value="shared">Shared · one physical typer</option><option value="individual">Individual · typer per agent</option><option value="lead">Lead only · selected agent writes</option></select></label>
+      <small id="mode-note">One shared queue. Adding agents does not increase typing throughput.</small>
+      <div class="row"><button class="soft" data-control="reconnect">Reconnect / continue…</button><button class="soft" data-control="refreshWindows">Refresh workspaces</button></div>
+      <button class="soft" id="set-lead">Make selected agent the lead</button>
+      <div id="agent-list" aria-label="Agent status"></div>
+    </details>
     <div id="operator-state" role="status">Editor ready · waiting for agent</div>
+    <div class="row">
+      <button class="primary" data-control="resume">Resume selected</button><button class="soft" data-control="pause">Pause selected</button>
+      <button class="soft" data-control="pause" data-scope="all">Pause all</button><button class="soft" data-control="resume" data-scope="all">Resume all</button>
+    </div>
     <div id="metrics">
-      <div><span>Elapsed</span><strong id="metric-elapsed">0s</strong></div>
+      <div><span>Workspace clock</span><strong id="metric-elapsed">0s</strong></div>
       <div><span>Effective WPM (cumulative)</span><strong id="metric-wpm">0</strong></div>
+      <div><span>Characters left (queued)</span><strong id="metric-remaining">0</strong></div>
+      <div><span>Typing ETA (estimate)</span><strong id="metric-eta">No input queued</strong></div>
+    </div>
+    <small>Selected-agent stats. Shared / lead mode has a common cadence.</small>
+    <small id="workspace-totals">Workspace: 0 characters typed</small>
+    <details><summary>Activity &amp; counters</summary><div class="detail-metrics">
       <div><span>Physical actions</span><strong id="metric-physical">0s</strong></div>
       <div><span>Queue wait</span><strong id="metric-queue">0s</strong></div>
       <div><span>Characters typed</span><strong id="metric-chars">0</strong></div>
@@ -256,16 +303,14 @@ export function panelHtml(cspSource: string): string {
       <div><span>Blocked attempts</span><strong id="metric-blocked">0</strong></div>
       <div><span>Corrections / false starts</span><strong id="metric-corrections">0 / 0</strong></div>
       <div><span>Automatic breaks / time</span><strong id="metric-breaks">0 / 0s</strong></div>
-      <div><span>Characters left (queued)</span><strong id="metric-remaining">0</strong></div>
-      <div><span>Typing ETA (estimate)</span><strong id="metric-eta">No input queued</strong></div>
     </div>
     <small id="eta-note">Known queue only—not project completion. Includes expected input pauses/corrections; excludes future AI output, navigation and build runtime.</small>
+    </details>
     <div class="row">
-      <button class="soft" data-control="pause">Pause input</button><button class="soft" data-control="resume">Resume</button>
       <button class="soft" data-control="reset">Start / reset clock</button><button class="soft" data-control="stop">Stop clock</button>
       <button class="soft" data-control="export">Export logs</button>
     </div>
-    <form id="cadence-form" class="row">
+    <details><summary>Typing &amp; human cadence</summary><form id="cadence-form" class="row">
       <label>WPM <input id="target-wpm" type="number" min="1" max="300" value="60" required></label>
       <label>Cadence <select id="cadence-mode"><option value="variable">Human cadence</option><option value="strict">Strict constant</option></select></label>
       <label>Seed <input id="profile-seed" type="number" min="0" max="4294967295" step="1" value="20261012" required></label>
@@ -275,7 +320,7 @@ export function panelHtml(cspSource: string): string {
       ${section("Mistakes and corrections", ["typoChance", "falseStartChance", "correctionPauseMs", "backspaceMs"], "Optional editor-only mistakes are visibly corrected. 0% disables. False starts are short wrong prefixes; chances apply only to ASCII letters, not indentation or punctuation. Correction costs add elapsed time. Strict mode disables these behaviours.")}
       ${section("Navigation and narration", PROFILE_FIELDS.filter(([group]) => group !== "type").map(([, key]) => key), "Physical navigation and narration delays; these do not limit reasoning or repository reading.")}
       <button class="primary" type="submit">Apply profile</button>
-    </form>
+    </form></details>
     <small>Profile changes apply to the next typing block and are saved for this workspace. Strict mode disables automatic pauses, breaks and mistakes.</small>
     <form id="break-form" class="row">
       <label>Break seconds <input id="break-seconds" type="number" min="1" max="86400" value="300" required></label>
@@ -315,7 +360,7 @@ export function panelHtml(cspSource: string): string {
       <div id="idle">
         <div id="idle-title">No active session</div>
         <div id="idle-summary"></div>
-        <div id="idle-text">Ask your agent to pair with you, or run <a class="command" data-command="aiPair.playDemo">AI Pair: Play Demo Session</a>. First time? Run <a class="command" data-command="aiPair.setUpAgent">AI Pair: Set Up Agent</a>.</div>
+        <div id="idle-text">Your files and clock are kept. Use <b>Reconnect / continue…</b> to copy a continuation prompt for your agent terminal. It starts a new editor session, not a replay of unfinished typing. First time? <a class="command" data-command="aiPair.setUpAgent">Set up your agent</a>, or <a class="command" data-command="aiPair.playDemo">play a demo</a>.</div>
       </div>
     </div>
     <div id="composer">
@@ -512,6 +557,8 @@ export function panelHtml(cspSource: string): string {
 
   function handle(e) {
     switch (e.type) {
+      case "resetView":
+        ui.history.replaceChildren(); current = null; setActive(false); return;
       case "replay":
         replaying = true;
         for (const ev of e.events) handle(ev);
@@ -610,7 +657,42 @@ export function panelHtml(cspSource: string): string {
     const duration = left >= 60 ? Math.floor(left / 60) + "m " + String(left % 60).padStart(2, "0") + "s" : left + "s";
     $("metric-eta").textContent = m.queuedCharacters > 0 ? "~" + duration + (m.typingEtaState === "paused" ? " after resume" : m.typingEtaState === "confirmation" ? " after confirmation" : "") : "No input queued";
     $("eta-note").textContent = (m.typingEtaState === "command-running" ? "Build/command running; its runtime is unknown. " : m.typingEtaState === "break" ? "Current break included. " : "") + "Known typing queue only—not project completion. Excludes future AI output, navigation and build runtime; optional input delays are estimates.";
-    $("operator-state").textContent = (m.paused ? "Input paused" : m.active ? "Agent connected" : "Editor ready · waiting for agent") + (m.automaticBreakRemainingMs > 0 ? " · automatic break " + seconds(m.automaticBreakRemainingMs) : m.breakRemainingMs > 0 ? " · break " + seconds(m.breakRemainingMs) : "") + (m.running ? " · clock running" : " · clock stopped");
+    const reasons = (m.pauseReasons || []).filter(r => r !== "break").map(r => ({ operator: "manual pause", user: "manual pause", workspace: "workspace-wide pause", reply: "reply being drafted", away: "editor navigation / looked away" }[r] || r));
+    const breaks = m.automaticBreakRemainingMs > 0 ? "automatic break · " + seconds(m.automaticBreakRemainingMs) + " left" : m.breakRemainingMs > 0 ? "timed break · " + seconds(m.breakRemainingMs) + " left" : "";
+    $("operator-state").dataset.paused = String(Boolean(m.paused));
+    const selected = (m.agents || []).find(a => a.id === m.selectedAgent);
+    $("operator-state").textContent = (selected ? selected.name + " · " : "") + (m.paused ? "Paused" + (reasons.length ? " · " + reasons.join(", ") : "") : m.active ? selected?.lane || "Agent connected" : "Editor ready · waiting for agent") + (breaks ? " · " + breaks : "") + (m.running ? " · clock running" : " · clock stopped");
+    if (m.extensionVersion) $("extension-version").textContent = "v" + m.extensionVersion;
+    if (m.workspaceTotals) $("workspace-totals").textContent = "Workspace: " + m.workspaceTotals.charactersTyped + " typed · " + m.workspaceTotals.commandsExecuted + " commands · " + m.workspaceTotals.clipboardOperations + " clipboard ops";
+    if (m.agents) {
+      $("session-summary").textContent = "Sessions & typers · " + m.agents.filter(a => a.connected && a.active).length + " active";
+      const picker = $("agent-picker");
+      const displayedAgents = [...m.agents].sort((a, b) => Number(b.connected && b.active) - Number(a.connected && a.active));
+      const signature = JSON.stringify(displayedAgents.map(a => [a.id, a.name, a.connected, a.active]));
+      if (picker.dataset.signature !== signature) {
+        picker.replaceChildren();
+        if (!m.agents.length) picker.add(new Option("Waiting for agent", ""));
+        for (const a of displayedAgents) picker.add(new Option(a.name + " [" + a.id + "]" + (a.connected ? a.active ? "" : " · ended" : " · disconnected"), a.id));
+        picker.dataset.signature = signature;
+      }
+      picker.value = m.selectedAgent || "";
+      picker.dataset.selected = picker.value;
+      $("agent-list").replaceChildren();
+      for (const a of displayedAgents) {
+        const card = document.createElement("div"); card.className = "agent-card" + (a.id === m.selectedAgent ? " selected" : "");
+        const name = document.createElement("strong"); name.textContent = a.name + (a.id === m.leadAgent && m.typingMode === "lead" ? " · lead" : "");
+        const info = document.createElement("small"); info.textContent = (a.connected ? a.active ? a.paused ? "paused" : a.lane : "session ended" : "disconnected") + " · " + (a.charactersTyped || 0) + " typed · " + (a.queuedCharacters || 0) + " queued";
+        card.append(name, info); $("agent-list").append(card);
+      }
+      $("typing-mode").value = m.typingMode || "shared";
+      $("mode-note").textContent = m.typingMode === "individual" ? "Separate WPM budgets. Total throughput increases: outside single-human benchmark rules. Same-file edits and commands stay locked." : m.typingMode === "lead" ? "Only the selected lead writes. Other agents may read and advise; advice forwarding is not automated." : "One shared queue. Adding agents does not increase typing throughput. ETA excludes other agents’ waiting time.";
+    }
+    if (m.windows) {
+      const picker = $("workspace-picker"); const signature = JSON.stringify(m.windows);
+      if (picker.dataset.signature !== signature) { picker.replaceChildren(); picker.add(new Option("This window", "local")); for (const w of m.windows) picker.add(new Option(w.name, w.id)); picker.dataset.signature = signature; }
+      picker.value = m.selectedWindow || "local";
+      picker.dataset.selected = picker.value;
+    }
     if (m.profile) currentProfile = m.profile;
     if (!cadenceDirty) {
       for (const field of document.querySelectorAll("[data-profile-key]")) {
@@ -625,7 +707,16 @@ export function panelHtml(cspSource: string): string {
   });
   const control = (operation, args = {}) => vscode.postMessage({ type: "control", operation, ...args });
   $("cadence-form").oninput = () => { cadenceDirty = true; };
-  for (const button of document.querySelectorAll("[data-control]")) button.onclick = () => control(button.dataset.control);
+  for (const button of document.querySelectorAll("[data-control]")) button.onclick = () => control(button.dataset.control, { scope: button.dataset.scope });
+  const switchTarget = (id, operation) => {
+    const picker = $(id);
+    if (ui.reply.value.trim()) { picker.value = picker.dataset.selected || ""; $("control-error").textContent = "Send or clear your drafted reply before switching targets."; return; }
+    control(operation, { value: picker.value });
+  };
+  $("agent-picker").onchange = () => switchTarget("agent-picker", "selectAgent");
+  $("typing-mode").onchange = () => control("typingMode", { value: $("typing-mode").value, leadAgent: $("agent-picker").value });
+  $("set-lead").onclick = () => control("typingMode", { value: "lead", leadAgent: $("agent-picker").value });
+  $("workspace-picker").onchange = () => switchTarget("workspace-picker", "selectWindow");
   $("cadence-form").onsubmit = (e) => {
     e.preventDefault();
     const timing = { type: { wpm: Number($("target-wpm").value), mode: $("cadence-mode").value }, reading: {} };

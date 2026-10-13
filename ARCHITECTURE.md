@@ -7,6 +7,10 @@ pairing session starts and ends. The agent-facing contract is in
 
 Status: **draft**.
 
+Human Body Mode 0.1.4 enables a controller per authenticated agent relay connection and a scheduler per editor window. Shared mode leases complete batches through one FIFO physical lane; individual mode gives separate typing budgets but locks overlapping files/commands; lead mode rejects non-lead physical submissions. Each controller owns its cursor, provenance clipboard, reports and counters. Shared/lead cadence and automatic-break budgets are common. The VS Code adapter serializes tab opening even in individual mode because one editor group cannot safely open two documents at once.
+
+The operator sidebar selects an agent and replays that agent's narration. It can discover/control other updated windows on the same host/user using their authenticated loopback bridges; discovery tokens stay outside the webview. Cross-window queues are independent, not one global body. Conversation history isn't forwarded across windows. Reconnect is a copied prompt, not model activation or queue restoration. See `LIMITATIONS.md` for batch-level build contention, restart and native-subagent boundaries.
+
 ## Components
 
 ```
@@ -63,7 +67,8 @@ file:
   "workspaceFolders": ["/Users/me/projects/todo-app"],
   "port": 53817,
   "token": "…",               // random, per window
-  "protocolVersion": 1,
+  "protocolVersion": 3,
+  "multiAgent": true,        // operator multi-agent controls available
   "lastFocused": 1758700000   // updated when the window gains focus
 }
 ```
@@ -128,8 +133,7 @@ A **session**:
   - the agent calls `end` (e.g. the programmer said they're done), or
   - the relay disconnects (the harness exited), or
   - the window closes.
-- **belongs to one window**, and a window has at most one session at a time. A
-  `start` while another session is active in that window is rejected.
+- **belongs to one window and agent relay connection**. A packaged 0.1.4 window permits multiple connections, with a shared physical lane by default. A second `start` on the same connection while its session is active is rejected. The legacy bridge without a controller factory still permits only one owning connection.
 
 Outside a session, pair tools other than `start` fail with `no_session`, so an
 agent can't accidentally drive the editor when the programmer isn't pairing.

@@ -108,6 +108,8 @@ export class Controller {
   private breakTimer?: ReturnType<typeof setTimeout>
   private breakUntil = 0
   private seed = 20261012
+  acquireInput?: (files: string[], signal: AbortSignal) => Promise<() => void>
+  breakMetrics?: () => ExperimentMetrics
 
   async control(args: Record<string, unknown>): Promise<object> {
     switch (args.operation) {
@@ -171,8 +173,9 @@ export class Controller {
   }
 
   controlStatus(): object {
-    const automaticBreakRemainingMs = Math.max(0, this.metrics.automaticBreakEndsAt - Date.now())
-    return { ...this.metricsSnapshot(), ...this.typingEstimate(), paused: this.isPaused || automaticBreakRemainingMs > 0, active: this.isActive, configuredWpm: this.config.timing.type.wpm, configuredMode: this.config.timing.type.mode, breakRemainingMs: Math.max(0, this.breakUntil - Date.now()), automaticBreakRemainingMs, profile: this.profile() }
+    const budget = this.breakMetrics?.() ?? this.metrics
+    const automaticBreakRemainingMs = Math.max(0, budget.automaticBreakEndsAt - Date.now())
+    return { ...this.metricsSnapshot(), ...this.typingEstimate(), automaticBreaks: budget.automaticBreaks, automaticBreakMs: budget.automaticBreakMs, pauseReasons: [...this.pauseReasons], paused: this.isPaused || automaticBreakRemainingMs > 0, active: this.isActive, configuredWpm: this.config.timing.type.wpm, configuredMode: this.config.timing.type.mode, breakRemainingMs: Math.max(0, this.breakUntil - Date.now()), automaticBreakRemainingMs, profile: this.profile() }
   }
 
   typingEstimate(): { queuedCharacters: number; typingBaseRemainingMs: number; typingEtaMs: number; typingEtaState: string } {
@@ -185,10 +188,11 @@ export class Controller {
       baseMs += value.baseMs
       extraMs += value.extraMs
     }
-    const remainingBreak = Math.max(0, this.metrics.automaticBreakEndsAt - Date.now(), this.breakUntil - Date.now())
+    const budget = this.breakMetrics?.() ?? this.metrics
+    const remainingBreak = Math.max(0, budget.automaticBreakEndsAt - Date.now(), this.breakUntil - Date.now())
     if (cadence.mode === "variable" && (cadence.autoBreakIntervalMinSeconds ?? 0) > 0) {
       const interval = ((cadence.autoBreakIntervalMinSeconds! + cadence.autoBreakIntervalMaxSeconds!) / 2) * 1000
-      const until = Math.max(0, (this.metrics.nextAutomaticBreakMs || interval) - this.metrics.typingSinceBreakMs)
+      const until = Math.max(0, (budget.nextAutomaticBreakMs || interval) - budget.typingSinceBreakMs)
       const breaks = baseMs > until + 1e-6 ? 1 + Math.floor((baseMs - until - 1e-6) / interval) : 0
       extraMs += breaks * ((cadence.autoBreakMinSeconds! + cadence.autoBreakMaxSeconds!) / 2) * 1000
     }
@@ -246,6 +250,7 @@ export class Controller {
           confirm: (id, command) => this.confirm(s, id, command),
           lines,
           metrics: this.metrics,
+          breakMetrics: () => this.breakMetrics?.() ?? this.metrics,
         }),
         queue: [],
         finished: [],
@@ -784,7 +789,29 @@ export class Controller {
         if (!batch) break
         this.startHead(s)
         this.render()
-        const { result, sightings } = await s.player.play(batch.id, batch.actions)
+        const files = new Set(batch.after?.edits.keys())
+        if (s.scene.cursor) files.add(s.scene.cursor.file)
+        for (const action of batch.actions) {
+          for (const key of ["move", "select", "point"] as const) {
+            if (key in action) {
+              const target = (action as Record<string, { file?: string }>)[key]
+              if (target?.file) files.add(this.resolvePath(s, target.file))
+            }
+          }
+          if ("run" in action) files.add("*")
+        }
+        let release: (() => void) | undefined
+        const queuedAt = Date.now()
+        let played: Awaited<ReturnType<Player["play"]>>
+        try {
+          release = await this.acquireInput?.([...files], s.timeline.signal)
+          this.metrics.addQueueWait(queuedAt, Date.now())
+          played = await s.player.play(batch.id, batch.actions)
+        } catch (error) {
+          played = { result: { id: batch.id, status: "discarded", unplayed: batch.actions }, sightings: [] }
+          s.events.push({ kind: "message", text: error instanceof Error ? error.message : String(error) })
+        } finally { release?.() }
+        const { result, sightings } = played
         if (this.session !== s) break
         // It played as it did in memory, so the lines it typed are the ones later batches were rehearsed with.
         if (result.status === "completed" && batch.after) s.lines.adopt(batch.after.lines)

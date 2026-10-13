@@ -1,4 +1,16 @@
-# Live UI verification — 2026-10-12
+# Live UI verification
+
+## Multi-session control — extension 0.1.4 (2026-10-13)
+
+Installed the packaged VSIX in an isolated code-server 4.109.5 profile/extensions directory with disposable Java fixture copies. Browser automation opened the actual sidebar, inspected screenshots, selected agents/workspaces and exercised the controls. No user editor settings, active user sessions or model requests were involved. The first visual check pushed stats below the fold; the shipped layout collapses session/counter/cadence details and keeps pause/resume and clock/ETA prominent. [Actual manual-pause sidebar](MULTI-SESSION.png).
+
+`scripts/multi-agent-smoke.mjs` launches two separate stdio MCP clients through the real relay/WebSocket/editor APIs. The final fixed navigation run typed and saved 40 characters in **8.782s shared / 4.318s individual**. A repeat passed at **8.667s / 4.244s**. Both verified isolated operator pause, lead-only write rejection with reading still permitted, independent session end, exact saved text, and same-file stale-plan discard. These include real editor overhead, are not whole-project benchmarks, and do not establish native subagent transport compatibility.
+
+A repeated run originally exposed concurrent `showTextDocument` calls failing in one editor group. The fix serializes editor tab-opening calls (not independent-file typing), guards navigation events across agent ports, and the repeatable driver now rejects failed/discarded/interrupted move reports before typing. Failed runs are not counted as successes. Repeated test clients select active IDs rather than older disconnected clients with matching names.
+
+Opened a second real project window on the same isolated server. The first sidebar discovered it; selecting it and clicking **Pause selected** changed only the second backend. `scripts/window-controls-smoke.mjs` checked both real MCP endpoints and resumed the second. The continuation button was clicked; headless Chromium refused clipboard readback, so actual copied-text readback remains unverified in this environment. The button is a copy-prompt handoff, not automatic agent resumption.
+
+Automated checks: 189 tests, seven native offline Claude Mod tests, typecheck, source-read-only/build-output-writable sandbox and VSIX packaging. A fresh real-time strict 300-character check passed at 60.13s. Actual Claude/Codex multi-agent reasoning, desktop Remote–SSH/WSL and live upgrade/resume remain unverified. Runtime modes/queues are not restored after reload; historical secondary-agent snapshots are preserved separately. Shared batching holds the input lease through build waits and is a documented fairness bias.
 
 ## Queued typing ETA — extension 0.1.3
 

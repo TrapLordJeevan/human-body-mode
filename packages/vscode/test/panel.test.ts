@@ -44,3 +44,14 @@ it("labels the queued typing ETA without claiming a project-completion predictio
   expect(html).toContain("No input queued")
   expect(html).toContain("not project completion")
 })
+
+it("provides scoped sessions, explicit pause reasons, safe continuation and a visible version", () => {
+  const html = panelHtml("vscode-resource:")
+  for (const id of ["workspace-picker", "agent-picker", "typing-mode", "agent-list", "extension-version"]) expect(html).toContain(`id="${id}"`)
+  expect(html).toContain('data-control="reconnect"')
+  expect(html).toContain('data-scope="all"')
+  expect(html).toContain("manual pause")
+  expect(html).toContain("reply being drafted")
+  expect(html).toContain("left")
+  expect(html).toContain("Total throughput increases")
+})

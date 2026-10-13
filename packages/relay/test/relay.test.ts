@@ -7,7 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import { ListRootsRequestSchema } from "@modelcontextprotocol/sdk/types.js"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { Bridge, Controller } from "@ai-pair/core"
+import { Bridge, Controller, controlWindow, listControlWindows } from "@ai-pair/core"
 import { FakeEditor, FakePanel, testConfig } from "../../core/test/fake"
 import { EditorLink, findWindows } from "../src/link"
 import { agentGuide, createServer } from "../src/server"
@@ -145,6 +145,75 @@ describe("relay", () => {
     await call(one, "start")
     expect((await call(two, "start")).text).toMatch(/^session_active:/)
     expect((await call(two, "listen")).text).toMatch(/^no_session:/)
+  })
+
+  it("isolates multiple real MCP connections, routes selected controls, and keeps other sessions after one ends", async () => {
+    bridge.dispose()
+    const controllers = [controller]
+    bridge = new Bridge(controller, { dir, workspaceFolders: () => ["/project"], createController: () => {
+      const port = new FakeEditor(); port.files = editor.files
+      const agent = new Controller(port, new FakePanel(), fast); port.controller = agent
+      controllers.push(agent)
+      return agent
+    } })
+    await bridge.start()
+    const one = await connect(), two = await connect()
+    expect((await call(one, "start", { task: "First" })).error).toBe(false)
+    expect((await call(two, "start", { task: "Second" })).error).toBe(false)
+    const status = JSON.parse((await call(one, "control", { operation: "status" })).text)
+    expect(status.agents).toHaveLength(2)
+    expect(status.selectedAgent).toBe("agent-1")
+    expect(status.typingMode).toBe("shared")
+    await call(two, "control", { operation: "selectAgent", value: "agent-2" })
+    await call(two, "control", { operation: "pause" })
+    expect(controllers[0]!.isPaused).toBe(false)
+    expect(controllers[1]!.isPaused).toBe(true)
+    await call(two, "control", { operation: "resume", scope: "all" })
+    expect(controllers[1]!.isPaused).toBe(false)
+    await call(one, "step", { actions: [{ move: { file: "one.txt", line: 1, to: "line_end" } }, { type: "a▌" }] })
+    await call(two, "step", { actions: [{ move: { file: "two.txt", line: 1, to: "line_end" } }, { type: "b▌" }] })
+    await Promise.all([call(one, "step", { actions: [] }), call(two, "step", { actions: [] })])
+    expect(editor.text("src/one.txt")).toBe("a")
+    expect(editor.text("src/two.txt")).toBe("b")
+    await call(one, "end")
+    expect(controllers[1]!.isActive).toBe(true)
+    await call(two, "step", { actions: [{ type: "c▌" }] })
+    await call(two, "step", { actions: [] })
+    expect(editor.text("src/two.txt")).toBe("bc")
+    expect(JSON.parse((await call(one, "control", { operation: "status" })).text).workspaceTotals.charactersTyped).toBe(3)
+    const peer = await controlWindow(dir, path.basename(bridge.file), { operation: "pause", scope: "all" })
+    expect(peer.agents).toHaveLength(2)
+    expect(controllers[1]!.isPaused).toBe(true)
+    expect(listControlWindows(dir, "/not/our/window")).toEqual([{ id: path.basename(bridge.file), name: `project · window ${process.pid}` }])
+    await expect(controlWindow(dir, "../secrets.json", { operation: "status" })).rejects.toThrow("Invalid window")
+    await expect(controlWindow(dir, "999999999.json", { operation: "status" })).rejects.toThrow()
+    await call(one, "control", { operation: "pause", scope: "all" })
+    const three = await connect()
+    expect((await call(three, "start", { task: "Late joiner" })).error).toBe(false)
+    expect(controllers[2]!.isPaused).toBe(true)
+    expect((await call(three, "read", { file: "a.ts" })).error).toBe(false)
+    await call(one, "control", { operation: "resume", scope: "all" })
+    expect(controllers[2]!.isPaused).toBe(false)
+    await call(two, "end")
+    const four = await connect()
+    expect((await call(four, "start", { task: "Reconnect" })).error).toBe(false)
+    expect(JSON.parse((await call(four, "control", { operation: "status" })).text).selectedAgent).toBe("agent-4")
+  })
+
+  it("lead mode allows other agents to read but refuses their physical actions", async () => {
+    bridge.dispose()
+    bridge = new Bridge(controller, { dir, workspaceFolders: () => ["/project"], createController: () => {
+      const port = new FakeEditor(); port.files = editor.files
+      const agent = new Controller(port, new FakePanel(), fast); port.controller = agent
+      return agent
+    } })
+    await bridge.start()
+    const one = await connect(), two = await connect()
+    await call(one, "start"); await call(two, "start")
+    expect((await call(one, "control", { operation: "typingMode", value: "lead", leadAgent: "agent-1" })).error).toBe(false)
+    expect((await call(two, "read", { file: "a.ts" })).error).toBe(false)
+    expect((await call(two, "step", { actions: [{ type: "bypass▌" }] })).text).toContain("selected lead")
+    expect(editor.edits).toHaveLength(0)
   })
 
   // The programmer acts right after the cancellation, before it reaches the editor, so the
